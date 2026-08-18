@@ -311,7 +311,6 @@ def save_reminders(data):
     except: pass
 
 def play_mp3_native(path):
-    """Play MP3/WAV silently using Windows MCI (NO popup dialog!)"""
     try:
         winmm = ctypes.windll.winmm
         winmm.mciSendStringW('close vasanth_audio', None, 0, 0)
@@ -436,9 +435,6 @@ def weather_report():
     rain_note = "— umbrella venum macha! 🌂" if rain >= 50 else "— problem illa! ☀️"
     return f"Macha! Chennai ippo **{temp}°C** iruku. Mazhai chance **{rain}%** {rain_note}"
 
-# ============================================================
-# 📈 CRYPTO TRACKER (CoinGecko FREE API)
-# ============================================================
 COIN_IDS = {"bitcoin":"bitcoin","btc":"bitcoin","ethereum":"ethereum","eth":"ethereum",
 "dogecoin":"dogecoin","doge":"dogecoin","solana":"solana","sol":"solana","ripple":"ripple",
 "xrp":"ripple","cardano":"cardano","ada":"cardano","shib":"shiba-inu","shiba":"shiba-inu",
@@ -459,9 +455,6 @@ def get_crypto(coin="bitcoin"):
         print(f"Crypto error: {e}")
     return smart_web_search(f"{coin} price today")
 
-# ============================================================
-# 🌍 TRANSLATOR (AI-powered, any language)
-# ============================================================
 def translate_text(text, target="english"):
     try:
         prompt = f"Translate the following text to {target}. Return ONLY the translation, nothing else.\n\nText: {text}"
@@ -472,9 +465,6 @@ def translate_text(text, target="english"):
         print(f"Translate error: {e}")
         return "Translate panna mudiyala macha 😅"
 
-# ============================================================
-# 📰 NEWS READER (DuckDuckGo News)
-# ============================================================
 def get_news(category="tamil"):
     try:
         queries = {"tamil":"latest Tamil news","sports":"sports news today","tech":"technology news",
@@ -942,9 +932,6 @@ def ask_groq(user_text):
             return ollama_reply
     return "மச்சா 😅 Groq + AWS + Local ellam down. 5 mins la try pannunga."
 
-# ============================================================
-# 🥇 TTS ENGINE (Gemini MP3 -> Google -> Edge) - NO FFMPEG NEEDED
-# ============================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 def pcm_to_wav(pcm_bytes, rate=24000):
@@ -958,7 +945,6 @@ def pcm_to_wav(pcm_bytes, rate=24000):
     return buf.getvalue()
 
 def pcm_to_mp3(pcm_bytes, rate=24000):
-    """Convert PCM to MP3 using lameenc (pure Python, NO ffmpeg/DLL needed!)"""
     if LAMEENC_READY:
         try:
             enc = lameenc.Encoder()
@@ -987,7 +973,6 @@ def pcm_to_mp3(pcm_bytes, rate=24000):
     return None
 
 def gemini_tts(text):
-    """Gemini TTS (most natural). Returns (buffer, mime) or None."""
     if not GEMINI_API_KEY:
         return None
     try:
@@ -1028,7 +1013,6 @@ def gemini_tts(text):
         return None
 
 def google_tts(text):
-    """Google Translate TTS (unlimited, native MP3)"""
     try:
         from gtts import gTTS
         buf = io.BytesIO()
@@ -1080,7 +1064,6 @@ async def _generate_edge_tts_async(text):
         print(f"❌ Edge TTS error: {e}"); raise
 
 def generate_tts(text):
-    """Cascade: Gemini (BEST MP3) -> Google (MP3) -> Edge (MP3). Returns (buffer, error, mime)."""
     try:
         cleaned_text = clean_text_for_tts(text)
         if not cleaned_text:
@@ -1165,7 +1148,6 @@ def proactive_thread():
             time.sleep(30)
 
 def strip_img_token(text):
-    """FIXED: None-safe"""
     if not text:
         return "", None
     text = str(text)
@@ -1371,44 +1353,47 @@ body { margin: 0; min-height: 100vh; background: #0a0614; color: #fff; font-fami
 @keyframes float { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(50px,-40px) scale(1.15);} }
 #particles { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
 .app { position: relative; z-index: 1; width: min(1100px,100%); height: min(900px,94vh); min-height:600px; background: rgba(20,10,35,.85); border: 1px solid rgba(232,121,249,.2); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 0 80px rgba(232,121,249,.15), 0 30px 80px rgba(0,0,0,.7); backdrop-filter: blur(24px); }
-.header { padding: 18px 24px; background: rgba(30,15,50,.9); border-bottom: 1px solid rgba(232,121,249,.15); display: flex; align-items: center; justify-content: space-between; gap: 18px; }
-.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.logo-img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(232,121,249,.6); box-shadow: 0 0 20px rgba(232,121,249,.5); flex: 0 0 auto; transition: all .3s; animation: logoPulse 3s ease-in-out infinite; }
+.header { padding: 14px 20px; background: rgba(30,15,50,.9); border-bottom: 1px solid rgba(232,121,249,.15); display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo-img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(232,121,249,.6); box-shadow: 0 0 20px rgba(232,121,249,.5); flex: 0 0 auto; transition: all .3s; animation: logoPulse 3s ease-in-out infinite; }
 body.speaking .logo-img { box-shadow: 0 0 40px rgba(232,121,249,.9); transform: scale(1.08); animation: logoGlow .8s ease-in-out infinite; }
 @keyframes logoPulse { 0%,100%{ box-shadow:0 0 20px rgba(232,121,249,.5);} 50%{ box-shadow:0 0 30px rgba(236,72,153,.7);} }
 @keyframes logoGlow { 0%,100%{ box-shadow:0 0 30px rgba(232,121,249,.8); transform:scale(1.08);} 50%{ box-shadow:0 0 50px rgba(236,72,153,1); transform:scale(1.12);} }
-.title { font-size: 24px; font-weight: 800; background: linear-gradient(90deg,#e879f9,#f0abfc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.subtitle { margin-top: 3px; color: #f5d0fe; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; }
-.online { display: inline-flex; align-items: center; gap: 7px; margin-top: 5px; color: #4ade80; font-size: 12px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 12px #22c55e; animation: pulse 1.8s infinite; }
+.title { font-size: 20px; font-weight: 800; background: linear-gradient(90deg,#e879f9,#f0abfc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: flex; align-items: center; gap: 8px; }
+.online { display: inline-flex; align-items: center; gap: 6px; color: #4ade80; font-size: 11px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 10px #22c55e; animation: pulse 1.8s infinite; }
 @keyframes pulse { 50% { opacity:.4; transform: scale(.8);} }
-.header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
-.small-btn { border:1px solid rgba(232,121,249,.25); background:rgba(30,15,50,.9); color:#f5d0fe; padding:9px 12px; border-radius:10px; cursor:pointer; font-size:12px; transition:all .2s; }
+.mood-badge { font-size: 16px; }
+.settings-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(232,121,249,.3); background: rgba(30,15,50,.9); color: #f5d0fe; font-size: 18px; cursor: pointer; transition: all .3s; flex: 0 0 auto; display: grid; place-items: center; }
+.settings-btn:hover { background: rgba(232,121,249,.15); transform: rotate(90deg); }
+.settings-panel { max-height: 0; overflow: hidden; transition: max-height .35s ease; background: rgba(25,12,45,.97); border-bottom: 1px solid transparent; }
+.settings-panel.open { max-height: 280px; border-bottom-color: rgba(232,121,249,.2); }
+.settings-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; justify-content: center; }
+.small-btn { border:1px solid rgba(232,121,249,.25); background:rgba(30,15,50,.9); color:#f5d0fe; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:12px; transition:all .2s; }
 .small-btn:hover { background:rgba(232,121,249,.12); border-color:rgba(232,121,249,.5); transform:translateY(-1px); }
 .small-btn.active { background:rgba(232,121,249,.2); border-color:#e879f9; }
 .small-btn.live-on { background:rgba(236,72,153,.3); border-color:#ec4899; color:#f0abfc; animation: livePulse 1.5s ease-in-out infinite; }
 @keyframes livePulse { 0%,100%{ box-shadow:0 0 10px rgba(236,72,153,.3);} 50%{ box-shadow:0 0 20px rgba(236,72,153,.8);} }
-.voice-select { border:1px solid rgba(232,121,249,.25); background:rgba(30,15,50,.9); color:#f5d0fe; padding:9px 12px; border-radius:10px; cursor:pointer; font-size:12px; outline:none; }
+.voice-select { border:1px solid rgba(232,121,249,.25); background:rgba(30,15,50,.9); color:#f5d0fe; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:12px; outline:none; }
 .voice-select option { background:#1e1b4b; }
-.mood-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; background: rgba(232,121,249,.15); border: 1px solid rgba(232,121,249,.35); border-radius: 12px; font-size: 11px; color: #f0abfc; margin-left: 8px; }
-#chat { flex: 1; padding: 25px; overflow-y: auto; scroll-behavior: smooth; }
-.message-row { display: flex; margin: 16px 0; gap: 10px; align-items: flex-start; animation: messageIn .35s cubic-bezier(.2,.9,.3,1.2); }
+#chat { flex: 1; padding: 20px; overflow-y: auto; scroll-behavior: smooth; }
+.message-row { display: flex; margin: 14px 0; gap: 10px; align-items: flex-start; animation: messageIn .35s cubic-bezier(.2,.9,.3,1.2); }
 .message-row.user-row { justify-content: flex-end; }
 .message-row.proactive-row { justify-content: center; }
 .message-row.proactive-row .message { background: rgba(236,72,153,.15); border: 1px dashed rgba(236,72,153,.4); font-style: italic; max-width: 70%; }
 @keyframes messageIn { from{opacity:0; transform:translateY(14px) scale(.96);} to{opacity:1; transform:translateY(0) scale(1);} }
-.avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; flex: 0 0 auto; margin-top: 2px; overflow: hidden; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; flex: 0 0 auto; margin-top: 2px; overflow: hidden; }
 .avatar.ai { background: linear-gradient(135deg,#e879f9,#ec4899); box-shadow: 0 0 14px rgba(232,121,249,.5); }
 .avatar.user { background: linear-gradient(135deg,#be185d,#ec4899); }
 .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.message { max-width: min(75%,740px); padding: 14px 17px; border-radius: 18px; line-height: 1.65; word-wrap: break-word; }
+.message { max-width: min(75%,740px); padding: 12px 16px; border-radius: 18px; line-height: 1.6; word-wrap: break-word; }
 .message .msg-text { white-space: pre-wrap; }
 .message .msg-text b { color: #f5d0fe; }
 .message .msg-text code { background: rgba(232,121,249,.12); border: 1px solid rgba(232,121,249,.3); padding: 1px 6px; border-radius: 6px; font-family: Consolas, monospace; font-size: .9em; color: #f0abfc; }
 .message img.msg-img { max-width: 260px; border-radius: 12px; margin-top: 8px; display: block; border: 1px solid rgba(232,121,249,.3); }
 .ai { background: rgba(40,20,65,.9); border: 1px solid rgba(232,121,249,.15); border-top-left-radius: 6px; }
 .user { background: linear-gradient(135deg,#be185d,#ec4899); border-top-right-radius: 6px; }
-.meta { font-size: 11px; opacity: .55; margin-top: 7px; display: flex; align-items: center; gap: 6px; }
+.meta { font-size: 10px; opacity: .55; margin-top: 6px; display: flex; align-items: center; gap: 6px; }
 .brain-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: rgba(232,121,249,.15); border: 1px solid rgba(232,121,249,.35); font-size: 10px; color: #f0abfc; }
 .copy-btn { cursor: pointer; opacity: .6; margin-left: auto; }
 .copy-btn:hover { opacity: 1; }
@@ -1416,38 +1401,38 @@ body.speaking .logo-img { box-shadow: 0 0 40px rgba(232,121,249,.9); transform: 
 .thinking span { width: 7px; height: 7px; border-radius: 50%; background: #e879f9; animation: bounce 1.1s infinite; }
 .thinking span:nth-child(2){animation-delay:.15s;} .thinking span:nth-child(3){animation-delay:.3s;}
 @keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:.4;} 30%{transform:translateY(-6px);opacity:1;} }
-.bottom { padding: 16px; background: rgba(25,12,45,.95); border-top: 1px solid rgba(232,121,249,.15); }
-.status-row { display: flex; align-items: center; gap: 12px; margin: 0 4px 9px; flex-wrap: wrap; }
+.bottom { padding: 14px; background: rgba(25,12,45,.95); border-top: 1px solid rgba(232,121,249,.15); }
+.status-row { display: flex; align-items: center; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap; }
 .voice-status { min-height: 18px; color: #4ade80; font-size: 12px; flex: 1; min-width: 200px; }
 #waveform { display: none; align-items: center; gap: 3px; height: 20px; }
 body.speaking #waveform { display: flex; }
 #waveform span { width: 4px; height: 18px; background: linear-gradient(180deg,#e879f9,#ec4899); border-radius: 2px; animation: wv .9s infinite ease-in-out; }
 #waveform span:nth-child(1){animation-delay:0s;} #waveform span:nth-child(2){animation-delay:.15s;} #waveform span:nth-child(3){animation-delay:.3s;} #waveform span:nth-child(4){animation-delay:.45s;} #waveform span:nth-child(5){animation-delay:.6s;}
 @keyframes wv { 0%,100%{transform:scaleY(.25);} 50%{transform:scaleY(1);} }
-.composer { display: flex; gap: 10px; }
-input { flex: 1; min-width: 0; padding: 15px 17px; border: 1px solid rgba(232,121,249,.2); border-radius: 15px; outline: none; background: rgba(15,8,28,.9); color: #fff; font-size: 15px; transition: all .3s; }
+.composer { display: flex; gap: 8px; }
+input { flex: 1; min-width: 0; padding: 13px 15px; border: 1px solid rgba(232,121,249,.2); border-radius: 15px; outline: none; background: rgba(15,8,28,.9); color: #fff; font-size: 14px; transition: all .3s; }
 input:focus { border-color: rgba(232,121,249,.6); box-shadow: 0 0 20px rgba(232,121,249,.2); }
 input::placeholder { color: #6b5b8a; }
-.action-btn { width: 52px; border: none; border-radius: 14px; cursor: pointer; font-size: 20px; color: white; transition: all .2s; }
+.action-btn { width: 46px; border: none; border-radius: 14px; cursor: pointer; font-size: 18px; color: white; transition: all .2s; }
 .action-btn:hover { transform: translateY(-2px) scale(1.05); filter: brightness(1.15); }
 .mic { background: linear-gradient(135deg,#16a34a,#059669); }
 .cam { background: linear-gradient(135deg,#f59e0b,#d97706); }
 .scr { background: linear-gradient(135deg,#8b5cf6,#6d28d9); }
 .send { background: linear-gradient(135deg,#d946ef,#a21caf); }
-.quick-actions { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
-.quick-btn { padding: 6px 12px; border-radius: 20px; border: 1px solid rgba(232,121,249,.2); background: rgba(30,15,50,.8); color: #f5d0fe; font-size: 11px; cursor: pointer; transition: all .2s; }
+.quick-actions { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.quick-btn { padding: 5px 10px; border-radius: 20px; border: 1px solid rgba(232,121,249,.2); background: rgba(30,15,50,.8); color: #f5d0fe; font-size: 10px; cursor: pointer; transition: all .2s; }
 .quick-btn:hover { background: rgba(232,121,249,.15); transform: translateY(-1px); }
-.footer-note { margin-top: 8px; text-align: center; color: #6b5b8a; font-size: 10px; letter-spacing: .5px; }
-.wake-word-indicator { position: fixed; top: 20px; right: 20px; display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: rgba(232,121,249,.15); border: 1px solid rgba(232,121,249,.35); border-radius: 30px; backdrop-filter: blur(10px); opacity: 0; transform: translateY(-20px); transition: all .3s ease; z-index: 1000; }
+.footer-note { margin-top: 6px; text-align: center; color: #6b5b8a; font-size: 9px; letter-spacing: .5px; }
+.wake-word-indicator { position: fixed; top: 20px; right: 20px; display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: rgba(232,121,249,.15); border: 1px solid rgba(232,121,249,.35); border-radius: 30px; backdrop-filter: blur(10px); opacity: 0; transform: translateY(-20px); transition: all .3s ease; z-index: 1000; }
 .wake-word-indicator.active { opacity: 1; transform: translateY(0); }
 .wake-word-indicator.listening { background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.5); }
 .wake-word-indicator.speaking { background: rgba(236,72,153,.25); border-color: rgba(236,72,153,.55); }
-.wake-word-orb { width: 16px; height: 16px; border-radius: 50%; background: #e879f9; animation: orbPulse 1.5s ease-in-out infinite; }
+.wake-word-orb { width: 14px; height: 14px; border-radius: 50%; background: #e879f9; animation: orbPulse 1.5s ease-in-out infinite; }
 .wake-word-indicator.listening .wake-word-orb { background:#22c55e; }
 .wake-word-indicator.speaking .wake-word-orb { background:#f0abfc; }
 @keyframes orbPulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.3);} }
-.wake-word-text { color: #fff; font-size: 13px; font-weight: 600; }
-@media (max-width:700px){ body{padding:0;} .app{width:100%;height:100vh;min-height:0;border-radius:0;} .header{padding:12px 15px;} .logo-img{width:44px;height:44px;} .title{font-size:18px;} #chat{padding:15px 12px;} .message{max-width:85%;} .bottom{padding:10px;} .action-btn{width:46px;} input{font-size:14px;padding:13px;} .avatar{width:30px;height:30px;font-size:14px;} }
+.wake-word-text { color: #fff; font-size: 12px; font-weight: 600; }
+@media (max-width:700px){ body{padding:0;} .app{width:100%;height:100vh;min-height:0;border-radius:0;} .header{padding:10px 14px;} .logo-img{width:38px;height:38px;} .title{font-size:16px;} #chat{padding:14px 10px;} .message{max-width:85%;} .bottom{padding:10px;} .action-btn{width:42px;} input{font-size:13px;padding:12px;} .avatar{width:28px;height:28px;font-size:13px;} }
 </style>
 </head>
 <body>
@@ -1462,12 +1447,14 @@ input::placeholder { color: #6b5b8a; }
         <div class="brand">
             <img src="/logo.png" alt="Vasanth AI" class="logo-img">
             <div>
-                <div class="title">VASANTH AI <span class="mood-badge" id="moodBadge">😊 Neutral</span></div>
-                <div class="subtitle">🎨 Image • 🎬 YT • ️ Weather • ️ PC Control</div>
-                <div class="online"><span class="dot"></span><span id="onlineText">Online — MEGA Edition Ready</span></div>
+                <div class="title">VASANTH AI <span class="mood-badge" id="moodBadge">😊</span></div>
+                <div class="online"><span class="dot"></span><span id="onlineText">Online</span></div>
             </div>
         </div>
-        <div class="header-actions">
+        <button class="settings-btn" onclick="toggleSettings()" id="settingsBtn" title="Settings">⚙️</button>
+    </div>
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-grid">
             <select id="voiceSelect" onchange="changeVoice()" class="voice-select" title="Select Voice">
                 <option value="pallavi">👩 Pallavi</option>
                 <option value="cute">🎀 Cute</option>
@@ -1475,45 +1462,41 @@ input::placeholder { color: #6b5b8a; }
             </select>
             <button class="small-btn" onclick="toggleLive()" id="liveBtn">🎙️ Live: OFF</button>
             <button class="small-btn" onclick="toggleGesture()" id="gestureBtn">✋ Gesture: OFF</button>
-            <button class="small-btn" onclick="installApp()" id="installBtn" style="display:none">📲 Install</button>
             <button class="small-btn active" onclick="toggleWakeWord()" id="wakeBtn">🎙️ Wake: ON</button>
+            <button class="small-btn" onclick="installApp()" id="installBtn" style="display:none">📲 Install</button>
             <button class="small-btn" onclick="clearChat()">🗑️ Clear</button>
         </div>
     </div>
     <div id="chat"></div>
     <div class="bottom">
         <div class="status-row">
-            <div id="voiceStatus" class="voice-status">🔊 Jarvis Systems Online — MEGA EDITION</div>
+            <div id="voiceStatus" class="voice-status">🔊 Ready</div>
             <div id="waveform"><span></span><span></span><span></span><span></span><span></span></div>
         </div>
         <div class="quick-actions">
-            <button class="quick-btn" onclick="quickSend('Draw a cute robot in neon style')">🎨 Draw</button>
+            <button class="quick-btn" onclick="quickSend('Draw a cute robot')">🎨 Draw</button>
             <button class="quick-btn" onclick="quickSend('Weather enna?')">🌦️ Weather</button>
-            <button class="quick-btn" onclick="quickSend('Good morning')">🌅 Morning</button>
-            <button class="quick-btn" onclick="quickSend('India cricket score enna?')">🏏 Cricket</button>
-            <button class="quick-btn" onclick="quickSend('Bitcoin price enna?')">📈 Crypto</button>
+            <button class="quick-btn" onclick="quickSend('Bitcoin price')">📈 Crypto</button>
             <button class="quick-btn" onclick="quickSend('Translate: vanakkam to english')">🌍 Translate</button>
             <button class="quick-btn" onclick="quickSend('Today news sollu')">📰 News</button>
-            <button class="quick-btn" onclick="quickSend('Take screenshot')">📸 Screenshot</button>
-            <button class="quick-btn" onclick="quickSend('Minimize all windows')">🗔 Minimize</button>
-            <button class="quick-btn" onclick="quickSend('Battery status enna?')">🔋 Battery</button>
+            <button class="quick-btn" onclick="quickSend('India cricket score')">🏏 Cricket</button>
         </div>
         <div class="composer">
-            <input id="message" type="text" placeholder="Say 'Macha' or type... (Image/YT/Weather/PC)" autocomplete="off">
+            <input id="message" type="text" placeholder="Say 'Macha' or type..." autocomplete="off">
             <button class="action-btn scr" onclick="quickSend('Take screenshot')" title="Screenshot">📸</button>
             <button class="action-btn cam" onclick="pickImage()" title="Photo">📷</button>
             <button class="action-btn mic" onclick="startVoice()" title="Voice">🎤</button>
             <button class="action-btn send" onclick="sendMessage()" title="Send">➤</button>
         </div>
         <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="onImagePicked(event)">
-        <div class="footer-note">VASANTH AI • MEGA EDITION 🎨️🖥️ • TRIPLE BRAIN 🖥️</div>
+        <div class="footer-note">VASANTH AI • MEGA EDITION v2 • Cloud + Local</div>
     </div>
 </div>
 <script>
 const LOGO_HTML = '<img src="/logo.png" alt="AI">';
 const wakeBeep = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2LkZaXmZaKi4uLioqJiIeGhYSDgoGAfn18e3p5eHd3d3Z1dXRzc29ubWxqaWhnZmVkY2NiYGBfXl1cW1taWVlZWVhYV1dWVlVVVFRUU1NSUlJRUFBQT09OTk1NTUxMTEw/Pz8+Pj49PT08PDw8Ozs7Ojo6OTo5OTk5ODg4ODc3Nzc2NjY1NTU1NDQ0NDMzMzMyMjIxMTExMDAwLy8vLi4uLS0tLCwsKysrKioqKSkoKCgnJycmJiYlJSUlJCQkIyMjIiIiISEhICAgICAgIB8fHx4eHh0dHRwcHBsbGxoaGhkZGRgYGBcXFxYWFhUUFBQTExMSEhIREREQEBAQEBAQEA8PDw4ODg0NDQwMDAsLCwoKCgkJCQgICAcHBwYGBgUFBQQEBAMDAwICAgEBAQAAAAD//wAA//8AAP//AAD//wAA");
 function playWakeBeep(){ try{ wakeBeep.currentTime=0; wakeBeep.play().catch(e=>{}); }catch(e){} }
-const MOOD_EMOJI = { happy:"😊 Happy", sad:"😢 Sad", excited:"🤩 Excited", tired:"😴 Tired", angry:"😠 Angry", neutral:"😐 Neutral", curious:"🤓 Curious" };
+const MOOD_EMOJI = { happy:"😊", sad:"😢", excited:"🤩", tired:"😴", angry:"😠", neutral:"😐", curious:"🤓" };
 
 function unlockAudio(){
   try{
@@ -1526,6 +1509,10 @@ function unlockAudio(){
 document.addEventListener("click", unlockAudio);
 document.addEventListener("keydown", unlockAudio);
 
+function toggleSettings(){
+  const p=document.getElementById("settingsPanel");
+  p.classList.toggle("open");
+}
 let gestureOn=false;
 function toggleGesture(){
   gestureOn=!gestureOn;
@@ -1549,8 +1536,8 @@ async function pollMood(){
     const r = await fetch("/mood"); const d = await r.json();
     if(d && d.mood){
       const badge = document.getElementById("moodBadge");
-      badge.textContent = MOOD_EMOJI[d.mood] || "😐 Neutral";
-      badge.title = "Intensity: " + (d.intensity || 5) + "/10";
+      badge.textContent = MOOD_EMOJI[d.mood] || "😐";
+      badge.title = (d.mood || "neutral") + " (" + (d.intensity || 5) + "/10)";
     }
   }catch(e){}
   setTimeout(pollMood, 5000);
@@ -1621,7 +1608,7 @@ function addMessage(t,type,time=null,imgSrc=null,animate=false,brain=""){
   if(imgSrc){const im=document.createElement("img");im.src=imgSrc;im.className="msg-img";b.appendChild(im);}
   const txt=document.createElement("div"); txt.className="msg-text"; b.appendChild(txt);
   const m=document.createElement("div");m.className="meta";
-  let meta=type==="user"?"You":type==="proactive"?"🔮 Vasanth AI (Proactive)":"Vasanth AI";
+  let meta=type==="user"?"You":type==="proactive"?"🔮 Proactive":"Vasanth AI";
   if(brain) meta+=` <span class="brain-badge">${brain}</span>`;
   meta+=" • "+(time||escapeTime());
   if(type==="ai") meta+=` <span class="copy-btn" title="Copy">⧉</span>`;
@@ -1645,7 +1632,7 @@ function addThinking(){
 function removeThinking(){const o=document.querySelector(".thinking");if(o)o.parentElement.remove();}
 function setVoiceStatus(t){const s=document.getElementById("voiceStatus");if(s)s.textContent=t;}
 function showIndicator(state,text){const ind=document.getElementById("wakeIndicator");ind.className="wake-word-indicator "+state;if(text)ind.querySelector(".wake-word-text").textContent=text;}
-function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**MEGA EDITION v2** ready! 🎨🎬️🖥️\n\n🥇 **Gemini Natural Voice** - MP3 via lameenc\n🎨 **AI Image Gen** - 'Draw a cute robot'\n🎬 **YouTube Summarizer**\n🌧️ **Weather Alerts**\n📈 **Crypto Tracker** - BTC, ETH live!\n🌍 **Translator** - Any language\n📰 **News Reader** - Tamil briefing\n🖥️ **PC Master Control**\n\n**Try:** 'Bitcoin price' / 'Translate: hello to tamil'","ai");}
+function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**MEGA EDITION v2** 🎨📈🌍📰\n\n🥇 Gemini Voice • 📈 Crypto • 🌍 Translate • 📰 News\n⚙️ Settings la irukku — click pannu try pannu!\n\n**Try:** 'Bitcoin price' / 'Translate: hello to tamil' / 'News sollu'","ai");}
 async function loadHistory(){try{const r=await fetch("/history");if(!r.ok)throw new Error();const d=await r.json();chat.innerHTML="";if(!d.history||d.history.length===0){showWelcome();return;}d.history.forEach(i=>{
   const isProactive = i.text && i.text.startsWith("[proactive]");
   const cleanText = isProactive ? i.text.substring(12) : i.text;
@@ -1656,10 +1643,10 @@ function changeVoice(){
   const voice=document.getElementById("voiceSelect").value;
   setVoiceStatus("🎤 Voice switching...");
   fetch("/change-voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({voice:voice})})
-    .then(r=>r.json()).then(d=>{ if(d.success){ setVoiceStatus("🎤 Voice: "+d.name); playTTS("Vanakkam macha! Naan "+d.name+" voice-la pesuren. Cute-a irukka?"); } })
+    .then(r=>r.json()).then(d=>{ if(d.success){ setVoiceStatus("🎤 Voice: "+d.name); playTTS("Vanakkam macha! Naan "+d.name+" voice-la pesuren."); } })
     .catch(e=>setVoiceStatus("⚠️ Voice error"));
 }
-function playTTS(t){return new Promise(async (resolve)=>{setVoiceStatus("🔊 குரல் உருவாகிறது...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);a.onplay=()=>{setVoiceStatus("🔊 பேசுகிறது...");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};a.onended=done;a.onerror=done;await a.play().catch(e=>{console.log("Play blocked:",e);done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});}
+function playTTS(t){return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);a.onplay=()=>{setVoiceStatus("🔊 Speaking...");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});}
 function quickSend(t){input.value=t;sendMessage();}
 function finishCycle(){busy=false;showIndicator("","");if(liveMode){setTimeout(startLiveListen,400);}else if(wakeWordEnabled){setTimeout(startWake,600);}}
 async function sendMessage(){const t=input.value.trim();if(!t){finishCycle();return;}busy=true;stopWake();addMessage(t,"user");input.value="";addThinking();setVoiceStatus(" Thinking...");showIndicator("listening","Processing...");try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:t})});if(!r.ok)throw new Error();const d=await r.json();removeThinking();addMessage(d.reply||"...", "ai",null,d.image||null,true,d.brain||"");await playTTS(d.reply||"");finishCycle();}catch(e){removeThinking();addMessage("Server error","ai");setVoiceStatus("🔴 Error");finishCycle();}}
@@ -1670,7 +1657,7 @@ function stopWake(){if(wakeRecognition){try{wakeRecognition.onend=null;wakeRecog
 function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "Macha"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{startCommandRecognition();}}};wakeRecognition.onerror=()=>{};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
 function startCommandRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){finishCycle();return;}commandRecognition=new SR();commandRecognition.lang="ta-IN";commandRecognition.continuous=false;commandRecognition.interimResults=false;let got=false;commandRecognition.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};commandRecognition.onend=()=>{if(!got)finishCycle();};setTimeout(()=>{try{commandRecognition.start();}catch(e){finishCycle();}},400);}
 function toggleWakeWord(){wakeWordEnabled=!wakeWordEnabled;const b=document.getElementById("wakeBtn");if(wakeWordEnabled){b.textContent="🎙️ Wake: ON";b.classList.add("active");startWake();}else{b.textContent="🎙️ Wake: OFF";b.classList.remove("active");stopWake();busy=false;showIndicator("","");}}
-function startVoice(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){addMessage("Voice not supported","ai");return;}busy=true;stopWake();const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;setVoiceStatus("🎤 பேசு...");r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};r.onend=()=>{if(!got)finishCycle();};try{r.start();}catch(e){finishCycle();}}
+function startVoice(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){addMessage("Voice not supported","ai");return;}busy=true;stopWake();const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;setVoiceStatus("🎤 Speaking...");r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};r.onend=()=>{if(!got)finishCycle();};try{r.start();}catch(e){finishCycle();}}
 let deferredPrompt=null;
 window.addEventListener("beforeinstallprompt",(e)=>{e.preventDefault();deferredPrompt=e;const b=document.getElementById("installBtn");if(b)b.style.display="inline-block";});
 function installApp(){if(!deferredPrompt)return;deferredPrompt.prompt();deferredPrompt.userChoice.then(r=>{if(r.outcome==="accepted")document.getElementById("installBtn").style.display="none";deferredPrompt=null;});}
@@ -1748,7 +1735,7 @@ def change_voice():
     key = data.get("voice", "pallavi")
     prof = VOICE_PROFILES.get(key, VOICE_PROFILES["pallavi"])
     EDGE_TTS_VOICE = prof["voice"]; EDGE_TTS_RATE = prof["rate"]; EDGE_TTS_PITCH = prof["pitch"]
-    print(f"🎤 Voice profile: {prof['label']} (rate={EDGE_TTS_RATE}, pitch={EDGE_TTS_PITCH})")
+    print(f"🎤 Voice profile: {prof['label']}")
     return jsonify({"success": True, "name": prof["label"]})
 
 @app.route("/gesture/on", methods=["POST"])
@@ -1772,9 +1759,9 @@ def gesture_status():
 @app.route("/manifest.json")
 def pwa_manifest():
     return jsonify({
-        "name": "Vasanth AI - MEGA Edition",
+        "name": "Vasanth AI",
         "short_name": "Vasanth AI",
-        "description": "AI with image gen, YT summary, weather, PC control",
+        "description": "AI assistant with cloud + local features",
         "start_url": "/", "scope": "/", "display": "standalone",
         "background_color": "#0f0a1e", "theme_color": "#e879f9", "orientation": "portrait",
         "icons": [
@@ -1811,27 +1798,17 @@ if __name__ == "__main__":
     threading.Thread(target=telegram_bot_thread, daemon=True).start()
     threading.Thread(target=proactive_thread, daemon=True).start()
     print("\n" + "=" * 60)
-    print("    VASANTH AI - MEGA EDITION v2 🎨🎬🌧️️📈🌍📰")
+    print("    VASANTH AI - MEGA EDITION v2 🎨📈🌍📰")
     print("=" * 60)
     print(f"Groq:     {'READY ✅' if GROQ_API_KEY else 'MISSING ❌'}")
     print(f"AWS:      {'READY ✅' if AWS_READY else 'Not configured'}")
     print(f"Ollama:   {'READY ✅ (OFFLINE!)' if OLLAMA_READY else 'Not running'}")
     print(f"Telegram: {'READY ✅' if (TELEGRAM_AVAILABLE and TELEGRAM_BOT_TOKEN) else 'Not configured'}")
-    print(f"PyAutoGUI:{'READY ✅' if PYAUTOGUI_READY else 'MISSING ❌'}")
-    print(f"Gemini:   {'🥇 NATURAL VOICE READY' if GEMINI_API_KEY else 'NOT SET (Google/Edge fallback)'}")
-    print(f"Lameenc:  {'✅ MP3 encoder ready (NO FFMPEG!)' if LAMEENC_READY else '❌ pip install lameenc'}")
-    print(f"Image:    🎨 Pollinations (FREE)")
-    print(f"YouTube:  🎬 Transcript Summarizer")
-    print(f"Weather:  🌧️ Open-Meteo (auto alerts)")
-    print(f"Crypto:   📈 CoinGecko (LIVE)")
-    print(f"Translate:🌍 Multi-language AI")
-    print(f"News:     📰 DDG News (Tamil)")
-    print(f"Memory:   🧠 PERMANENT")
-    print(f"Mood:     🎭 Emotion Detection ON")
-    print(f"Proactive:🔮 Background speaker ON")
-    print(f"PC Ctrl:  🖥️ FULL ACCESS")
-    print(f"Gesture:  ✋ Hand control ready")
-    print(f"Logo:     {'READY ✅' if os.path.exists(os.path.join(BASE_DIR,'logo.png')) else 'MISSING ❌'}")
+    print(f"Gemini:   {'🥇 NATURAL VOICE READY' if GEMINI_API_KEY else 'NOT SET (fallback)'}")
+    print(f"Lameenc:  {'✅ MP3 encoder' if LAMEENC_READY else '❌ pip install lameenc'}")
+    print(f"Crypto:   📈 CoinGecko LIVE")
+    print(f"Translate:🌍 AI Multi-language")
+    print(f"News:     📰 DDG News Tamil")
     print("=" * 60 + "\n")
     threading.Thread(target=open_browser, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 7860)), debug=False, use_reloader=False)
