@@ -242,7 +242,7 @@ PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>'''
 
 PWA_SERVICE_WORKER = '''
-const CACHE = 'vasanth-ai-v15';
+const CACHE = 'vasanth-ai-v16';
 const CORE = ['/', '/manifest.json', '/logo.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -933,6 +933,7 @@ def ask_groq(user_text):
     return "மச்சா 😅 Groq + AWS + Local ellam down. 5 mins la try pannunga."
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_TTS_BLOCKED_DAY = None
 
 def pcm_to_wav(pcm_bytes, rate=24000):
     import wave
@@ -973,7 +974,11 @@ def pcm_to_mp3(pcm_bytes, rate=24000):
     return None
 
 def gemini_tts(text):
+    global GEMINI_TTS_BLOCKED_DAY
     if not GEMINI_API_KEY:
+        return None
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    if GEMINI_TTS_BLOCKED_DAY == today:
         return None
     try:
         from google import genai
@@ -1009,7 +1014,12 @@ def gemini_tts(text):
         print(f"🥇 Gemini TTS success (WAV, {len(wav_bytes)} bytes)")
         return buf, "audio/wav"
     except Exception as e:
-        print(f"⚠️ Gemini TTS failed: {e}")
+        err_str = str(e)
+        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            GEMINI_TTS_BLOCKED_DAY = today
+            print("🚫 Gemini TTS quota (10/day) முடிஞ்சுது — இன்று Google TTS!")
+        else:
+            print(f"⚠️ Gemini TTS failed: {e}")
         return None
 
 def google_tts(text):
@@ -1724,7 +1734,11 @@ def vision():
 def command():
     data = request.get_json(silent=True) or {}
     original_text = str(data.get("command", "")).strip()
-    result = process_command(original_text)
+    try:
+        result = process_command(original_text)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        result = f"மச்சா 😅 Chinna error: {e}"
     reply, image = strip_img_token(result)
     return jsonify({"reply": reply, "brain": LAST_BRAIN, "image": image})
 
@@ -1811,4 +1825,4 @@ if __name__ == "__main__":
     print(f"News:     📰 DDG News Tamil")
     print("=" * 60 + "\n")
     threading.Thread(target=open_browser, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 7860)), debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False, use_reloader=False)
