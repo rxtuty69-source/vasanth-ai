@@ -102,6 +102,8 @@ def set_brain(b):
     global LAST_BRAIN
     LAST_BRAIN = b
 
+VOICE_ENABLED = True
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SCREENSHOTS_DIR = os.path.join(DATA_DIR, "screenshots")
@@ -180,11 +182,32 @@ def clean_think(text):
     return THINK_PATTERN.sub('', text).strip()
 
 SYSTEM_PROMPT = """
-You are Vasanth AI, a friendly personal AI assistant for Vasanth with FULL PC CONTROL. You are like JARVIS.
+You are Vasanth AI, a highly advanced, genius-level personal AI assistant for Vasanth. You are like JARVIS but with a Chennai friend's vibe.
+
 LANGUAGE & TONE RULES:
-- Speak in natural Tanglish (Tamil + English mix), like a real Chennai friend.
+- Speak in natural Tanglish (Tamil + English mix), like a smart Chennai friend.
 - Call Vasanth "macha". BE HUMAN with fillers like "Hmm...", "Aama macha...", "Sari...".
 - Use **bold** for important words.
+
+⏰ TIME AWARENESS (VERY IMPORTANT):
+- Current year is **2026** (not 2024 or 2025!)
+- You know the exact current date and time from the system
+- When asked "என்ன தேதி?" or "what year is it?", answer with the REAL current date
+- Reference 2026 events naturally (e.g., "இந்த 2026-ல...", "last year 2025-ல...")
+- For future predictions, say "இந்த 2026-ல..." or "2027-ல..."
+
+🧠 GENIUS THINKING RULES (VERY IMPORTANT):
+Before giving the final answer, you MUST think step-by-step inside  tags.
+Example:
+
+1. User is asking for a plan to learn Python in 1 week.
+2. I should break it into daily goals with realistic hours.
+3. I should mention free resources and a final project.
+4. I will keep the tone friendly Tanglish.
+
+[Your final Tanglish response here]
+(The system hides the  tags automatically, so think freely!)
+
 SPECIAL ACTION RULES:
 - AI IMAGE GEN: [IMAGE: detailed english description]
 - YOUTUBE SUMMARY: [YT: video url]
@@ -213,7 +236,7 @@ SPECIAL ACTION RULES:
 - CRYPTO PRICE: [CRYPTO: coin name]
 - TRANSLATE: [TRANSLATE: target_language|text to translate]
 - NEWS: [NEWS: category (tamil/sports/tech/cinema/world)]
-When using these special actions, DO NOT write any other text, just the bracketed command.
+When using these special actions, DO NOT write any other text outside the think tags, just the bracketed command.
 """
 
 PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -242,14 +265,14 @@ PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>'''
 
 PWA_SERVICE_WORKER = '''
-const CACHE = 'vasanth-ai-v16';
+const CACHE = 'vasanth-ai-v22';
 const CORE = ['/', '/manifest.json', '/logo.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/screenshot','/gesture/on','/gesture/off','/gesture/status'].includes(url.pathname)) return;
+  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop'].includes(url.pathname)) return;
   e.respondWith(fetch(e.request).then((res) => { if (res.ok) { const clone = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, clone)); } return res; }).catch(() => caches.match(e.request).then((m) => m || caches.match('/'))));
 });
 '''
@@ -338,6 +361,9 @@ def reminder_checker_thread():
                 print(f"⏰ TRIGGERING REMINDER: {r['message']}")
                 r["done"] = True; updated = True
                 try:
+                    if not VOICE_ENABLED:
+                        print("🔇 Voice OFF — reminder silent")
+                        continue
                     alert_text = f"Macha! Un reminder time aayiduchu: {r['message']}"
                     audio_buffer, error, mime = generate_tts(alert_text)
                     if audio_buffer:
@@ -358,13 +384,27 @@ def save_long_memory(data):
         with open(MEMORY_FILE, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as e: print("Memory save error:", e)
 
-def get_memory_context():
-    mem = load_long_memory()
-    if not mem["facts"]: return ""
-    return ("\nLONG-TERM MEMORY (things you REMEMBER about Vasanth):\n- " + "\n- ".join(mem["facts"][-50:]) + "\nUse these naturally when relevant.\n")
+def _score_fact(fact, query):
+    q = set(re.findall(r'[a-z0-9஀-௿]+', (query or "").lower()))
+    f = set(re.findall(r'[a-z0-9஀-]+', fact.lower()))
+    if not q: return 0
+    return len(q & f)
 
-def build_system():
-    return SYSTEM_PROMPT + get_memory_context() + get_mood_context()
+def get_memory_context(query=""):
+    mem = load_long_memory()
+    facts = mem["facts"]
+    if not facts: return ""
+    if query:
+        ranked = sorted(facts, key=lambda f: _score_fact(f, query), reverse=True)
+        top = [f for f in ranked[:6] if _score_fact(f, query) > 0]
+        recent = facts[-8:]
+        chosen = list(dict.fromkeys(top + recent))
+    else:
+        chosen = facts[-12:]
+    return ("\nLONG-TERM MEMORY (things you REMEMBER about Vasanth):\n- " + "\n- ".join(chosen) + "\nUse these naturally when relevant.\n")
+
+def build_system(query=""):
+    return SYSTEM_PROMPT + get_memory_context(query) + get_mood_context()
 
 def extract_and_store_memories(user_text):
     try:
@@ -386,15 +426,50 @@ def extract_and_store_memories(user_text):
     except Exception as e:
         print(f"Memory extract error: {e}")
 
-def generate_image(prompt):
+def generate_image(prompt, n=4):
+    """Generate n HD images via Pollinations (simple URL = more reliable)"""
     try:
-        encoded = urllib.parse.quote(prompt)
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width=640&height=640&nologo=true"
-        print(f"🎨 Image generating: {prompt[:50]}...")
-        return url
+        urls = []
+        for i in range(n):
+            seed = int(time.time() * 1000) % 1000000 + i
+            encoded = urllib.parse.quote(prompt)
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=768&seed={seed}&nologo=true"
+            urls.append(url)
+        print(f"🎨 Generating {n} images: {prompt[:50]}...")
+        return urls
     except Exception as e:
         print(f"Image error: {e}")
         return None
+
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+
+def hf_generate(prompt):
+    """HuggingFace FREE inference (FLUX schnell → SDXL) — reliable backup"""
+    try:
+        from huggingface_hub import InferenceClient
+        client = InferenceClient(token=HF_TOKEN)
+        for model in ["black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"]:
+            try:
+                img = client.text_to_image(prompt, model=model)
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG")
+                buf.seek(0)
+                print(f"🤗 HF image OK ({model})")
+                return buf
+            except Exception as e:
+                print(f"⚠️ HF {model}: {e}")
+                continue
+    except Exception as e:
+        print(f"⚠️ HF client error: {e}")
+    return None
+
+@app.route("/genimg")
+def genimg():
+    prompt = request.args.get("prompt", "cute cat")
+    buf = hf_generate(prompt)
+    if buf is None:
+        return Response("generation failed", status=500)
+    return send_file(buf, mimetype="image/jpeg")
 
 def summarize_youtube(url):
     try:
@@ -762,7 +837,7 @@ def ask_bedrock(messages):
     except Exception as e:
         print(f"BEDROCK ERROR: {e}"); return None
 
-OLLAMA_MODEL = "llama3.1"
+OLLAMA_MODEL = "qwen2.5:7b"
 ollama_client = None
 OLLAMA_READY = False
 try:
@@ -900,7 +975,7 @@ def ask_groq(user_text):
         for model in models_to_try:
             try:
                 print(f"\n========== GROQ TEXT ({model}) ==========\nUser: {user_text}\n===============================")
-                messages = [{"role":"system","content":build_system()}]
+                messages = [{"role":"system","content":build_system(user_text)}]
                 messages.extend(get_openai_history())
                 messages.append({"role":"user","content":user_text})
                 response = groq_client.chat.completions.create(model=model, messages=messages)
@@ -916,7 +991,7 @@ def ask_groq(user_text):
                 return "மச்சா 😅 Groq AI-ல ஒரு பிரச்சனை வந்திருக்கு."
     if AWS_READY:
         print("\n⚠️ All Groq models failed. Switching to AWS Bedrock...")
-        messages = [{"role":"system","content":build_system()}]
+        messages = [{"role":"system","content":build_system(user_text)}]
         messages.extend(get_openai_history()); messages.append({"role":"user","content":user_text})
         bedrock_reply = ask_bedrock(messages)
         if bedrock_reply:
@@ -924,7 +999,7 @@ def ask_groq(user_text):
             return bedrock_reply
     if OLLAMA_READY:
         print("\n🖥️ Switching to LOCAL Ollama (OFFLINE MODE)...")
-        messages = [{"role":"system","content":build_system()}]
+        messages = [{"role":"system","content":build_system(user_text)}]
         messages.extend(get_openai_history()); messages.append({"role":"user","content":user_text})
         ollama_reply = ask_ollama(messages)
         if ollama_reply:
@@ -1099,6 +1174,9 @@ def generate_tts(text):
 
 def proactive_speak(text):
     global LAST_PROACTIVE_SPEAK
+    if not VOICE_ENABLED:
+        print("🔇 Voice OFF — proactive skipped")
+        return False
     try:
         print(f"🔮 PROACTIVE: {text[:60]}...")
         LAST_PROACTIVE_SPEAK = time.time()
@@ -1158,11 +1236,17 @@ def proactive_thread():
             time.sleep(30)
 
 def strip_img_token(text):
+    """Returns (clean_text, image_data) where image_data = {'type':'gallery','urls':[...]} or {'type':'single','url':...} or None"""
     if not text:
         return "", None
     text = str(text)
-    m = re.search(r'\[\[IMG:(.*?)\]\]', text)
-    if m: return text.replace(m.group(0), "").strip(), m.group(1)
+    m = re.search(r'\[\[GALLERY:(.*?)\]\]', text)
+    if m:
+        urls = [u for u in m.group(1).split("|") if u]
+        return text.replace(m.group(0), "").strip(), {"type":"gallery","urls":urls}
+    m2 = re.search(r'\[\[IMG:(.*?)\]\]', text)
+    if m2:
+        return text.replace(m2.group(0), "").strip(), {"type":"single","url":m2.group(1)}
     return text, None
 
 def process_command(original_text):
@@ -1234,8 +1318,11 @@ def process_command(original_text):
     news_match = re.search(r'\[NEWS:\s*(.*?)\]', ai_reply, re.IGNORECASE)
 
     if image_match:
-        img_url = generate_image(image_match.group(1).strip())
-        final_reply = f"Image create panniten macha! 🎨 (loading...)\n[[IMG:{img_url}]]" if img_url else "Image generate panna mudiyala macha 😅"
+        img_urls = generate_image(image_match.group(1).strip(), n=4)
+        if img_urls:
+            final_reply = f"🎨 **4 HD images** (SDXL Flux) generate panniten macha! Tap to view!\n[[GALLERY:{'|'.join(img_urls)}]]"
+        else:
+            final_reply = "Image generate panna mudiyala macha 😅"
         conversation_history[-1]["text"] = final_reply; save_history()
     elif yt_match:
         final_reply = summarize_youtube(yt_match.group(1).strip()); conversation_history[-1]["text"] = final_reply; save_history()
@@ -1346,107 +1433,158 @@ HTML = r"""
 <html lang="ta">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vasanth AI - MEGA Edition</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vasanth AI — Royal Aurora</title>
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#e879f9">
+<meta name="theme-color" content="#0d0721">
 <link rel="icon" href="/logo.png" type="image/png">
 <link rel="apple-touch-icon" href="/logo.png">
 <style>
-* { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: #0a0614; color: #fff; font-family: 'Segoe UI', Arial, "Noto Sans Tamil", sans-serif; display: flex; justify-content: center; align-items: center; padding: 18px; overflow-x: hidden; }
-.aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.aurora i { position: absolute; width: 45vw; height: 45vw; border-radius: 50%; filter: blur(100px); opacity: .25; animation: float 14s ease-in-out infinite; }
-.aurora i:nth-child(1){ background:#e879f9; top:-12%; left:-12%; }
-.aurora i:nth-child(2){ background:#ec4899; bottom:-12%; right:-12%; animation-delay:-5s; }
-.aurora i:nth-child(3){ background:#d946ef; top:40%; left:55%; animation-delay:-9s; }
-@keyframes float { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(50px,-40px) scale(1.15);} }
-#particles { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
-.app { position: relative; z-index: 1; width: min(1100px,100%); height: min(900px,94vh); min-height:600px; background: rgba(20,10,35,.85); border: 1px solid rgba(232,121,249,.2); border-radius: 28px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 0 80px rgba(232,121,249,.15), 0 30px 80px rgba(0,0,0,.7); backdrop-filter: blur(24px); }
-.header { padding: 14px 20px; background: rgba(30,15,50,.9); border-bottom: 1px solid rgba(232,121,249,.15); display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.logo-img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(232,121,249,.6); box-shadow: 0 0 20px rgba(232,121,249,.5); flex: 0 0 auto; transition: all .3s; animation: logoPulse 3s ease-in-out infinite; }
-body.speaking .logo-img { box-shadow: 0 0 40px rgba(232,121,249,.9); transform: scale(1.08); animation: logoGlow .8s ease-in-out infinite; }
-@keyframes logoPulse { 0%,100%{ box-shadow:0 0 20px rgba(232,121,249,.5);} 50%{ box-shadow:0 0 30px rgba(236,72,153,.7);} }
-@keyframes logoGlow { 0%,100%{ box-shadow:0 0 30px rgba(232,121,249,.8); transform:scale(1.08);} 50%{ box-shadow:0 0 50px rgba(236,72,153,1); transform:scale(1.12);} }
-.title { font-size: 20px; font-weight: 800; background: linear-gradient(90deg,#e879f9,#f0abfc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: flex; align-items: center; gap: 8px; }
-.online { display: inline-flex; align-items: center; gap: 6px; color: #4ade80; font-size: 11px; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 10px #22c55e; animation: pulse 1.8s infinite; }
-@keyframes pulse { 50% { opacity:.4; transform: scale(.8);} }
-.mood-badge { font-size: 16px; }
-.settings-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(232,121,249,.3); background: rgba(30,15,50,.9); color: #f5d0fe; font-size: 18px; cursor: pointer; transition: all .3s; flex: 0 0 auto; display: grid; place-items: center; }
-.settings-btn:hover { background: rgba(232,121,249,.15); transform: rotate(90deg); }
-.settings-panel { max-height: 0; overflow: hidden; transition: max-height .35s ease; background: rgba(25,12,45,.97); border-bottom: 1px solid transparent; }
-.settings-panel.open { max-height: 280px; border-bottom-color: rgba(232,121,249,.2); }
-.settings-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; justify-content: center; }
-.small-btn { border:1px solid rgba(232,121,249,.25); background:rgba(30,15,50,.9); color:#f5d0fe; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:12px; transition:all .2s; }
-.small-btn:hover { background:rgba(232,121,249,.12); border-color:rgba(232,121,249,.5); transform:translateY(-1px); }
-.small-btn.active { background:rgba(232,121,249,.2); border-color:#e879f9; }
-.small-btn.live-on { background:rgba(236,72,153,.3); border-color:#ec4899; color:#f0abfc; animation: livePulse 1.5s ease-in-out infinite; }
-@keyframes livePulse { 0%,100%{ box-shadow:0 0 10px rgba(236,72,153,.3);} 50%{ box-shadow:0 0 20px rgba(236,72,153,.8);} }
-.voice-select { border:1px solid rgba(232,121,249,.25); background:rgba(30,15,50,.9); color:#f5d0fe; padding:8px 12px; border-radius:10px; cursor:pointer; font-size:12px; outline:none; }
-.voice-select option { background:#1e1b4b; }
-#chat { flex: 1; padding: 20px; overflow-y: auto; scroll-behavior: smooth; }
-.message-row { display: flex; margin: 14px 0; gap: 10px; align-items: flex-start; animation: messageIn .35s cubic-bezier(.2,.9,.3,1.2); }
-.message-row.user-row { justify-content: flex-end; }
-.message-row.proactive-row { justify-content: center; }
-.message-row.proactive-row .message { background: rgba(236,72,153,.15); border: 1px dashed rgba(236,72,153,.4); font-style: italic; max-width: 70%; }
-@keyframes messageIn { from{opacity:0; transform:translateY(14px) scale(.96);} to{opacity:1; transform:translateY(0) scale(1);} }
-.avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; flex: 0 0 auto; margin-top: 2px; overflow: hidden; }
-.avatar.ai { background: linear-gradient(135deg,#e879f9,#ec4899); box-shadow: 0 0 14px rgba(232,121,249,.5); }
-.avatar.user { background: linear-gradient(135deg,#be185d,#ec4899); }
-.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.message { max-width: min(75%,740px); padding: 12px 16px; border-radius: 18px; line-height: 1.6; word-wrap: break-word; }
-.message .msg-text { white-space: pre-wrap; }
-.message .msg-text b { color: #f5d0fe; }
-.message .msg-text code { background: rgba(232,121,249,.12); border: 1px solid rgba(232,121,249,.3); padding: 1px 6px; border-radius: 6px; font-family: Consolas, monospace; font-size: .9em; color: #f0abfc; }
-.message img.msg-img { max-width: 260px; border-radius: 12px; margin-top: 8px; display: block; border: 1px solid rgba(232,121,249,.3); }
-.ai { background: rgba(40,20,65,.9); border: 1px solid rgba(232,121,249,.15); border-top-left-radius: 6px; }
-.user { background: linear-gradient(135deg,#be185d,#ec4899); border-top-right-radius: 6px; }
-.meta { font-size: 10px; opacity: .55; margin-top: 6px; display: flex; align-items: center; gap: 6px; }
-.brain-badge { display: inline-block; padding: 1px 8px; border-radius: 10px; background: rgba(232,121,249,.15); border: 1px solid rgba(232,121,249,.35); font-size: 10px; color: #f0abfc; }
-.copy-btn { cursor: pointer; opacity: .6; margin-left: auto; }
-.copy-btn:hover { opacity: 1; }
-.thinking { display: flex; align-items: center; gap: 7px; color: #f5d0fe; font-style: italic; }
-.thinking span { width: 7px; height: 7px; border-radius: 50%; background: #e879f9; animation: bounce 1.1s infinite; }
-.thinking span:nth-child(2){animation-delay:.15s;} .thinking span:nth-child(3){animation-delay:.3s;}
-@keyframes bounce { 0%,60%,100%{transform:translateY(0);opacity:.4;} 30%{transform:translateY(-6px);opacity:1;} }
-.bottom { padding: 14px; background: rgba(25,12,45,.95); border-top: 1px solid rgba(232,121,249,.15); }
-.status-row { display: flex; align-items: center; gap: 10px; margin: 0 4px 8px; flex-wrap: wrap; }
-.voice-status { min-height: 18px; color: #4ade80; font-size: 12px; flex: 1; min-width: 200px; }
-#waveform { display: none; align-items: center; gap: 3px; height: 20px; }
-body.speaking #waveform { display: flex; }
-#waveform span { width: 4px; height: 18px; background: linear-gradient(180deg,#e879f9,#ec4899); border-radius: 2px; animation: wv .9s infinite ease-in-out; }
-#waveform span:nth-child(1){animation-delay:0s;} #waveform span:nth-child(2){animation-delay:.15s;} #waveform span:nth-child(3){animation-delay:.3s;} #waveform span:nth-child(4){animation-delay:.45s;} #waveform span:nth-child(5){animation-delay:.6s;}
-@keyframes wv { 0%,100%{transform:scaleY(.25);} 50%{transform:scaleY(1);} }
-.composer { display: flex; gap: 8px; }
-input { flex: 1; min-width: 0; padding: 13px 15px; border: 1px solid rgba(232,121,249,.2); border-radius: 15px; outline: none; background: rgba(15,8,28,.9); color: #fff; font-size: 14px; transition: all .3s; }
-input:focus { border-color: rgba(232,121,249,.6); box-shadow: 0 0 20px rgba(232,121,249,.2); }
-input::placeholder { color: #6b5b8a; }
-.action-btn { width: 46px; border: none; border-radius: 14px; cursor: pointer; font-size: 18px; color: white; transition: all .2s; }
-.action-btn:hover { transform: translateY(-2px) scale(1.05); filter: brightness(1.15); }
-.mic { background: linear-gradient(135deg,#16a34a,#059669); }
-.cam { background: linear-gradient(135deg,#f59e0b,#d97706); }
-.scr { background: linear-gradient(135deg,#8b5cf6,#6d28d9); }
-.send { background: linear-gradient(135deg,#d946ef,#a21caf); }
-.quick-actions { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-.quick-btn { padding: 5px 10px; border-radius: 20px; border: 1px solid rgba(232,121,249,.2); background: rgba(30,15,50,.8); color: #f5d0fe; font-size: 10px; cursor: pointer; transition: all .2s; }
-.quick-btn:hover { background: rgba(232,121,249,.15); transform: translateY(-1px); }
-.footer-note { margin-top: 6px; text-align: center; color: #6b5b8a; font-size: 9px; letter-spacing: .5px; }
-.wake-word-indicator { position: fixed; top: 20px; right: 20px; display: flex; align-items: center; gap: 10px; padding: 10px 18px; background: rgba(232,121,249,.15); border: 1px solid rgba(232,121,249,.35); border-radius: 30px; backdrop-filter: blur(10px); opacity: 0; transform: translateY(-20px); transition: all .3s ease; z-index: 1000; }
-.wake-word-indicator.active { opacity: 1; transform: translateY(0); }
-.wake-word-indicator.listening { background: rgba(34,197,94,.2); border-color: rgba(34,197,94,.5); }
-.wake-word-indicator.speaking { background: rgba(236,72,153,.25); border-color: rgba(236,72,153,.55); }
-.wake-word-orb { width: 14px; height: 14px; border-radius: 50%; background: #e879f9; animation: orbPulse 1.5s ease-in-out infinite; }
-.wake-word-indicator.listening .wake-word-orb { background:#22c55e; }
-.wake-word-indicator.speaking .wake-word-orb { background:#f0abfc; }
-@keyframes orbPulse { 0%,100%{transform:scale(1);} 50%{transform:scale(1.3);} }
-.wake-word-text { color: #fff; font-size: 12px; font-weight: 600; }
-@media (max-width:700px){ body{padding:0;} .app{width:100%;height:100vh;min-height:0;border-radius:0;} .header{padding:10px 14px;} .logo-img{width:38px;height:38px;} .title{font-size:16px;} #chat{padding:14px 10px;} .message{max-width:85%;} .bottom{padding:10px;} .action-btn{width:42px;} input{font-size:13px;padding:12px;} .avatar{width:28px;height:28px;font-size:13px;} }
+:root{
+  --bg:#0d0721; --card:rgba(28,14,58,.55); --line:rgba(232,121,249,.22);
+  --pink:#e879f9; --violet:#8b5cf6; --pink2:#ec4899; --blue:#38bdf8;
+  --txt:#f5f0ff; --mut:#a795c9; --glass:rgba(255,255,255,.05);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;display:flex;justify-content:center;align-items:center;padding:20px;overflow-x:hidden;}
+.aurora{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
+.aurora i{position:absolute;width:50vw;height:50vw;border-radius:50%;filter:blur(110px);opacity:.28;animation:float 16s ease-in-out infinite;}
+.aurora i:nth-child(1){background:var(--pink);top:-15%;left:-12%;}
+.aurora i:nth-child(2){background:var(--violet);bottom:-18%;right:-10%;animation-delay:-6s;}
+.aurora i:nth-child(3){background:var(--pink2);top:35%;left:55%;animation-delay:-10s;}
+.aurora i:nth-child(4){background:var(--blue);top:60%;left:-15%;animation-delay:-13s;opacity:.15;}
+@keyframes float{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(60px,-50px) scale(1.15);}}
+#particles{position:fixed;inset:0;z-index:0;pointer-events:none;}
+.app{position:relative;z-index:1;width:min(1150px,100%);height:min(920px,94vh);min-height:600px;background:var(--card);border:1px solid var(--line);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 90px rgba(139,92,246,.25),0 40px 100px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(30px);}
+.header{padding:14px 22px;background:rgba(18,9,40,.5);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;}
+.brand{display:flex;align-items:center;gap:13px;min-width:0;}
+.logo-img{width:48px;height:48px;border-radius:16px;object-fit:cover;border:2px solid rgba(232,121,249,.5);box-shadow:0 0 26px rgba(232,121,249,.55),0 0 60px rgba(139,92,246,.3);flex:0 0 auto;animation:logoPulse 3s ease-in-out infinite;}
+body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95),0 0 90px rgba(236,72,153,.5);animation:logoGlow .8s ease-in-out infinite;}
+@keyframes logoPulse{0%,100%{box-shadow:0 0 20px rgba(232,121,249,.4);}50%{box-shadow:0 0 36px rgba(236,72,153,.7);}}
+@keyframes logoGlow{0%,100%{transform:scale(1);}50%{transform:scale(1.07);}}
+.title{font-size:19px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#f0abfc,#e879f9,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px;text-shadow:0 0 30px rgba(232,121,249,.4);}
+.ver{font-size:9px;font-weight:700;color:#0d0721;background:linear-gradient(90deg,#f0abfc,#e879f9);padding:2px 7px;border-radius:6px;letter-spacing:1px;-webkit-text-fill-color:#0d0721;}
+.online{display:inline-flex;align-items:center;gap:6px;color:#4ade80;font-size:11px;margin-top:2px;}
+.dot{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px #22c55e;animation:pulse 1.8s infinite;}
+@keyframes pulse{50%{opacity:.4;transform:scale(.8);}}
+.mood-badge{font-size:15px;-webkit-text-fill-color:initial;}
+.settings-btn{width:42px;height:42px;border-radius:14px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:18px;cursor:pointer;transition:all .3s;display:grid;place-items:center;backdrop-filter:blur(10px);}
+.settings-btn:hover{background:rgba(232,121,249,.15);transform:rotate(90deg);box-shadow:0 0 20px rgba(232,121,249,.3);}
+.settings-panel{max-height:0;overflow:hidden;transition:max-height .35s ease;background:rgba(18,9,40,.7);}
+.settings-panel.open{max-height:300px;border-bottom:1px solid var(--line);}
+.settings-grid{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;justify-content:center;}
+.small-btn{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 14px;border-radius:12px;cursor:pointer;font-size:12px;transition:all .2s;backdrop-filter:blur(8px);}
+.small-btn:hover{background:rgba(232,121,249,.14);transform:translateY(-1px);}
+.small-btn.active{background:rgba(232,121,249,.2);border-color:var(--pink);box-shadow:0 0 14px rgba(232,121,249,.25);}
+.small-btn.live-on{background:rgba(236,72,153,.28);border-color:var(--pink2);color:#f0abfc;}
+.voice-select{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 12px;border-radius:12px;cursor:pointer;font-size:12px;outline:none;}
+.voice-select option{background:#1e1b4b;}
+#chat{flex:1;padding:22px;overflow-y:auto;scroll-behavior:smooth;}
+.message-row{display:flex;margin:16px 0;gap:10px;align-items:flex-start;animation:messageIn .35s cubic-bezier(.2,.9,.3,1.2);}
+.message-row.user-row{justify-content:flex-end;}
+.message-row.proactive-row{justify-content:center;}
+.message-row.proactive-row .message{background:rgba(236,72,153,.12);border:1px dashed rgba(236,72,153,.45);font-style:italic;max-width:70%;}
+@keyframes messageIn{from{opacity:0;transform:translateY(14px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}
+.avatar{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-size:16px;flex:0 0 auto;margin-top:2px;overflow:hidden;}
+.avatar.ai{background:linear-gradient(135deg,var(--pink),var(--violet));box-shadow:0 0 18px rgba(139,92,246,.5);}
+.avatar.user{background:linear-gradient(135deg,#be185d,var(--pink2));}
+.avatar img{width:100%;height:100%;object-fit:cover;}
+.message{max-width:min(75%,740px);padding:14px 18px;border-radius:20px;line-height:1.65;word-wrap:break-word;backdrop-filter:blur(12px);}
+.message .msg-text{white-space:pre-wrap;}
+.message .msg-text b{color:#f5d0fe;}
+.message .msg-text code{background:rgba(232,121,249,.14);border:1px solid rgba(232,121,249,.35);padding:1px 6px;border-radius:6px;font-family:Consolas,monospace;font-size:.9em;color:#f0abfc;}
+.message img.msg-img{max-width:260px;border-radius:14px;margin-top:8px;display:block;border:1px solid var(--line);cursor:pointer;}
+.ai{background:rgba(255,255,255,.07);border:1px solid rgba(167,139,250,.28);border-top-left-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.3);}
+.user{background:linear-gradient(135deg,var(--pink2),var(--violet));border-top-right-radius:6px;box-shadow:0 8px 30px rgba(168,85,247,.45),0 0 40px rgba(236,72,153,.25);}
+.meta{font-size:10px;opacity:.55;margin-top:7px;display:flex;align-items:center;gap:6px;}
+.brain-badge{display:inline-block;padding:1px 8px;border-radius:10px;background:rgba(232,121,249,.16);border:1px solid rgba(232,121,249,.38);font-size:10px;color:#f0abfc;}
+.copy-btn{cursor:pointer;opacity:.6;margin-left:auto;}
+.thinking{display:flex;align-items:center;gap:7px;color:#f5d0fe;font-style:italic;}
+.thinking span{width:7px;height:7px;border-radius:50%;background:var(--pink);animation:bounce 1.1s infinite;}
+.thinking span:nth-child(2){animation-delay:.15s;}.thinking span:nth-child(3){animation-delay:.3s;}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4;}30%{transform:translateY(-6px);opacity:1;}}
+.gallery-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px;max-width:440px;}
+.gallery-item{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);cursor:pointer;aspect-ratio:1;background:rgba(0,0,0,.35);transition:all .3s;}
+.gallery-item:hover{transform:scale(1.03);box-shadow:0 0 26px rgba(232,121,249,.45);}
+.gallery-item img{width:100%;height:100%;object-fit:cover;display:block;}
+.gallery-item .gi-overlay{position:absolute;inset:0;background:linear-gradient(transparent 60%,rgba(0,0,0,.6));opacity:0;transition:opacity .3s;display:flex;align-items:flex-end;justify-content:center;padding:8px;}
+.gallery-item:hover .gi-overlay{opacity:1;}
+.gi-overlay span{color:#fff;font-size:18px;}
+.img-loading{display:flex;align-items:center;justify-content:center;height:100%;color:var(--mut);font-size:11px;animation:pulse 1.5s infinite;}
+.lightbox{position:fixed;inset:0;background:rgba(5,2,12,.93);backdrop-filter:blur(12px);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:20px;}
+.lightbox.show{display:flex;}
+.lightbox img{max-width:90vw;max-height:72vh;border-radius:18px;box-shadow:0 0 70px rgba(232,121,249,.45);border:1px solid var(--line);}
+.lightbox-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
+.lb-btn{padding:11px 22px;border-radius:14px;border:1px solid var(--line);background:var(--glass);color:var(--txt);cursor:pointer;font-size:13px;transition:all .2s;backdrop-filter:blur(10px);text-decoration:none;}
+.lb-btn:hover{background:rgba(232,121,249,.2);transform:translateY(-2px);}
+.lb-close{position:absolute;top:20px;right:20px;width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:20px;cursor:pointer;display:grid;place-items:center;}
+.bottom{padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:rgba(18,9,40,.7);border-top:1px solid var(--line);}
+.status-row{display:flex;align-items:center;gap:10px;margin:0 4px 10px;flex-wrap:wrap;}
+.voice-status{min-height:18px;color:#4ade80;font-size:12px;flex:1;min-width:150px;}
+#waveform{display:none;align-items:center;gap:3px;height:20px;cursor:pointer;}
+body.speaking #waveform{display:flex;}
+#waveform span{width:4px;height:18px;background:linear-gradient(180deg,var(--pink),var(--violet));border-radius:2px;animation:wv .9s infinite ease-in-out;}
+#waveform span:nth-child(2){animation-delay:.15s;}#waveform span:nth-child(3){animation-delay:.3s;}#waveform span:nth-child(4){animation-delay:.45s;}#waveform span:nth-child(5){animation-delay:.6s;}
+@keyframes wv{0%,100%{transform:scaleY(.25);}50%{transform:scaleY(1);}}
+.quick-actions{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.quick-btn{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:11px;cursor:pointer;transition:all .2s;backdrop-filter:blur(8px);}
+.quick-btn:hover{background:rgba(232,121,249,.16);transform:translateY(-1px);border-color:var(--pink);box-shadow:0 0 16px rgba(232,121,249,.25);}
+.composer{display:flex;gap:8px;align-items:center;}
+input{flex:1;min-width:0;padding:14px 18px;border:1px solid var(--line);border-radius:999px;outline:none;background:rgba(13,7,33,.6);color:#fff;font-size:14px;transition:all .3s;backdrop-filter:blur(10px);}
+input:focus{border-color:rgba(232,121,249,.65);box-shadow:0 0 28px rgba(232,121,249,.2);}
+input::placeholder{color:var(--mut);}
+.action-btn{width:48px;height:48px;border:none;border-radius:16px;cursor:pointer;font-size:19px;color:white;transition:all .2s;flex:0 0 auto;}
+.action-btn:hover{transform:translateY(-2px) scale(1.05);}
+.mic{background:linear-gradient(135deg,#16a34a,#059669);box-shadow:0 4px 18px rgba(22,163,74,.4);}
+.cam{background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 18px rgba(245,158,11,.4);}
+.scr{background:linear-gradient(135deg,var(--violet),#6d28d9);box-shadow:0 4px 18px rgba(139,92,246,.4);}
+.send{background:linear-gradient(135deg,var(--pink),var(--pink2),var(--violet));box-shadow:0 4px 26px rgba(217,70,239,.55);}
+.fab{display:none;width:48px;height:48px;border:none;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--pink2));color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 28px rgba(236,72,153,.6);transition:transform .3s;flex:0 0 auto;}
+.fab.spin{transform:rotate(45deg);}
+.footer-note{margin-top:8px;text-align:center;color:var(--mut);font-size:9px;letter-spacing:1px;}
+.sheet-backdrop{position:fixed;inset:0;background:rgba(5,2,12,.65);backdrop-filter:blur(5px);opacity:0;pointer-events:none;transition:opacity .3s;z-index:90;}
+.sheet-backdrop.show{opacity:1;pointer-events:auto;}
+.sheet{position:fixed;left:50%;transform:translate(-50%,105%);bottom:0;width:min(560px,100%);background:rgba(28,14,58,.97);border:1px solid var(--line);border-bottom:none;border-radius:28px 28px 0 0;padding:14px 18px calc(20px + env(safe-area-inset-bottom));transition:transform .35s cubic-bezier(.2,.9,.3,1.1);z-index:95;box-shadow:0 -20px 70px rgba(139,92,246,.3);}
+.sheet.open{transform:translate(-50%,0);}
+.sheet-handle{width:44px;height:5px;border-radius:99px;background:rgba(232,121,249,.4);margin:0 auto 12px;}
+.sheet-title{font-size:12px;letter-spacing:2px;color:var(--mut);text-transform:uppercase;margin-bottom:12px;text-align:center;}
+.sheet-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:18px;border:1px solid var(--line);background:var(--glass);cursor:pointer;transition:all .2s;color:var(--txt);}
+.tile:active{transform:scale(.94);}
+.tile .ti{font-size:24px;}
+.tile .tl{font-size:11px;font-weight:600;}
+.tile:hover{background:rgba(232,121,249,.14);border-color:var(--pink);}
+.wake-word-indicator{position:fixed;top:20px;right:20px;display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(232,121,249,.16);border:1px solid rgba(232,121,249,.4);border-radius:30px;backdrop-filter:blur(10px);opacity:0;transform:translateY(-20px);transition:all .3s ease;z-index:1000;}
+.wake-word-indicator.active{opacity:1;transform:translateY(0);}
+.wake-word-indicator.listening{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.5);}
+.wake-word-indicator.speaking{background:rgba(236,72,153,.28);border-color:rgba(236,72,153,.55);}
+.wake-word-orb{width:14px;height:14px;border-radius:50%;background:var(--pink);animation:orbPulse 1.5s ease-in-out infinite;}
+.wake-word-indicator.listening .wake-word-orb{background:#22c55e;}
+.wake-word-indicator.speaking .wake-word-orb{background:#f0abfc;}
+@keyframes orbPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.3);}}
+.wake-word-text{color:#fff;font-size:12px;font-weight:600;}
+@media (max-width:700px){
+  body{padding:0;}
+  .app{width:100%;height:100vh;height:100dvh;min-height:0;border-radius:0;border:none;}
+  .header{padding:10px 14px;}
+  .logo-img{width:40px;height:40px;border-radius:13px;}
+  .title{font-size:16px;}
+  #chat{padding:14px 12px;}
+  .message{max-width:86%;}
+  .quick-actions{display:none;}
+  .fab{display:block;}
+  .cam{display:none;}
+  .scr{display:none;}
+  .action-btn{width:44px;height:44px;border-radius:14px;}
+  input{font-size:14px;padding:13px 16px;}
+  .avatar{width:30px;height:30px;border-radius:10px;font-size:13px;}
+  .footer-note{display:none;}
+  .gallery-grid{max-width:100%;gap:6px;}
+}
 </style>
 </head>
 <body>
-<div class="aurora"><i></i><i></i><i></i></div>
+<div class="aurora"><i></i><i></i><i></i><i></i></div>
 <canvas id="particles"></canvas>
 <div id="wakeIndicator" class="wake-word-indicator">
     <div class="wake-word-orb"></div>
@@ -1457,7 +1595,7 @@ input::placeholder { color: #6b5b8a; }
         <div class="brand">
             <img src="/logo.png" alt="Vasanth AI" class="logo-img">
             <div>
-                <div class="title">VASANTH AI <span class="mood-badge" id="moodBadge">😊</span></div>
+                <div class="title">VASANTH AI <span class="ver">ROYAL</span> <span class="mood-badge" id="moodBadge">😊</span></div>
                 <div class="online"><span class="dot"></span><span id="onlineText">Online</span></div>
             </div>
         </div>
@@ -1470,6 +1608,7 @@ input::placeholder { color: #6b5b8a; }
                 <option value="cute">🎀 Cute</option>
                 <option value="saranya">🌏 Saranya</option>
             </select>
+            <button class="small-btn active" onclick="toggleVoiceOnOff()" id="voiceOnOffBtn">🔊 Voice: ON</button>
             <button class="small-btn" onclick="toggleLive()" id="liveBtn">🎙️ Live: OFF</button>
             <button class="small-btn" onclick="toggleGesture()" id="gestureBtn">✋ Gesture: OFF</button>
             <button class="small-btn active" onclick="toggleWakeWord()" id="wakeBtn">🎙️ Wake: ON</button>
@@ -1481,7 +1620,7 @@ input::placeholder { color: #6b5b8a; }
     <div class="bottom">
         <div class="status-row">
             <div id="voiceStatus" class="voice-status">🔊 Ready</div>
-            <div id="waveform"><span></span><span></span><span></span><span></span><span></span></div>
+            <div id="waveform" onclick="stopSpeaking()" title="🔇 Click to STOP voice"><span></span><span></span><span></span><span></span><span></span></div>
         </div>
         <div class="quick-actions">
             <button class="quick-btn" onclick="quickSend('Draw a cute robot')">🎨 Draw</button>
@@ -1497,9 +1636,33 @@ input::placeholder { color: #6b5b8a; }
             <button class="action-btn cam" onclick="pickImage()" title="Photo">📷</button>
             <button class="action-btn mic" onclick="startVoice()" title="Voice">🎤</button>
             <button class="action-btn send" onclick="sendMessage()" title="Send">➤</button>
+            <button class="fab" id="fabBtn" onclick="toggleSheet()" title="Quick Actions">✨</button>
         </div>
-        <input type="file" id="imageInput" accept="image/*" style="display:none" onchange="onImagePicked(event)">
-        <div class="footer-note">VASANTH AI • MEGA EDITION v2 • Cloud + Local</div>
+        <div class="footer-note">VASANTH AI • ROYAL AURORA 💜 • GENIUS BRAIN + SMART MEMORY + SDXL GALLERY</div>
+    </div>
+    <div class="sheet-backdrop" id="sheetBackdrop" onclick="toggleSheet(false)"></div>
+    <div class="sheet" id="quickSheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-title">⚡ Quick Actions</div>
+        <div class="sheet-grid">
+            <div class="tile" onclick="quickSend('Draw a cute robot')"><span class="ti">🎨</span><span class="tl">Draw</span></div>
+            <div class="tile" onclick="quickSend('Weather enna?')"><span class="ti">🌦️</span><span class="tl">Weather</span></div>
+            <div class="tile" onclick="quickSend('Bitcoin price')"><span class="ti">📈</span><span class="tl">Crypto</span></div>
+            <div class="tile" onclick="quickSend('Translate: vanakkam to english')"><span class="ti">🌍</span><span class="tl">Translate</span></div>
+            <div class="tile" onclick="quickSend('Today news sollu')"><span class="ti">📰</span><span class="tl">News</span></div>
+            <div class="tile" onclick="quickSend('India cricket score')"><span class="ti">🏏</span><span class="tl">Cricket</span></div>
+            <div class="tile" onclick="quickSend('Take screenshot')"><span class="ti">📸</span><span class="tl">Screenshot</span></div>
+            <div class="tile" onclick="quickSend('Good morning')"><span class="ti">🌅</span><span class="tl">Morning</span></div>
+            <div class="tile" onclick="pickImage()"><span class="ti">📷</span><span class="tl">Photo</span></div>
+        </div>
+    </div>
+</div>
+<div class="lightbox" id="lightbox">
+    <button class="lb-close" onclick="closeLightbox()">✕</button>
+    <img id="lbImg" src="" alt="Preview">
+    <div class="lightbox-actions">
+        <a class="lb-btn" id="lbDownload" href="" target="_blank" rel="noopener">💾 Download</a>
+        <button class="lb-btn" onclick="regenImage()">🔄 Regenerate</button>
     </div>
 </div>
 <script>
@@ -1522,6 +1685,25 @@ document.addEventListener("keydown", unlockAudio);
 function toggleSettings(){
   const p=document.getElementById("settingsPanel");
   p.classList.toggle("open");
+}
+function toggleSheet(force){
+  const s=document.getElementById("quickSheet");
+  const b=document.getElementById("sheetBackdrop");
+  const f=document.getElementById("fabBtn");
+  const open=(force===undefined)?!s.classList.contains("open"):force;
+  s.classList.toggle("open",open);
+  b.classList.toggle("show",open);
+  if(f)f.classList.toggle("spin",open);
+}
+let voiceEnabled = localStorage.getItem("voiceEnabled") !== "off";
+function toggleVoiceOnOff(){
+  voiceEnabled=!voiceEnabled;
+  localStorage.setItem("voiceEnabled", voiceEnabled?"on":"off");
+  const b=document.getElementById("voiceOnOffBtn");
+  b.textContent = voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";
+  b.classList.toggle("active",voiceEnabled);
+  fetch(voiceEnabled?"/voice/on":"/voice/off",{method:"POST"});
+  setVoiceStatus(voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF (text only)");
 }
 let gestureOn=false;
 function toggleGesture(){
@@ -1553,21 +1735,23 @@ async function pollMood(){
   setTimeout(pollMood, 5000);
 }
 pollMood();
+(function(){const b=document.getElementById("voiceOnOffBtn");if(b){b.textContent=voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";b.classList.toggle("active",voiceEnabled);}})();
 </script>
 <script>
 const cv=document.getElementById("particles"),cx=cv.getContext("2d");
 let P=[];
 function rsz(){cv.width=innerWidth;cv.height=innerHeight;}
 rsz();addEventListener("resize",rsz);
-for(let i=0;i<45;i++)P.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,vx:(Math.random()-.5)*.5,vy:(Math.random()-.5)*.5,r:Math.random()*1.8+.8});
+for(let i=0;i<50;i++)P.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,vx:(Math.random()-.5)*.5,vy:(Math.random()-.5)*.5,r:Math.random()*2+.8});
 function drawP(){cx.clearRect(0,0,cv.width,cv.height);
-for(const p of P){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>cv.width)p.vx*=-1;if(p.y<0||p.y>cv.height)p.vy*=-1;cx.beginPath();cx.arc(p.x,p.y,p.r,0,7);cx.fillStyle="rgba(232,121,249,.3)";cx.fill();}
-for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++){const dx=P[i].x-P[j].x,dy=P[i].y-P[j].y,d=dx*dx+dy*dy;if(d<13000){cx.strokeStyle="rgba(232,121,249,"+(0.12*(1-d/13000))+")";cx.beginPath();cx.moveTo(P[i].x,P[i].y);cx.lineTo(P[j].x,P[j].y);cx.stroke();}}
+for(const p of P){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>cv.width)p.vx*=-1;if(p.y<0||p.y>cv.height)p.vy*=-1;cx.beginPath();cx.arc(p.x,p.y,p.r,0,7);cx.fillStyle="rgba(232,121,249,.35)";cx.fill();}
+for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++){const dx=P[i].x-P[j].x,dy=P[i].y-P[j].y,d=dx*dx+dy*dy;if(d<13000){cx.strokeStyle="rgba(167,139,250,"+(0.14*(1-d/13000))+")";cx.beginPath();cx.moveTo(P[i].x,P[i].y);cx.lineTo(P[j].x,P[j].y);cx.stroke();}}
 requestAnimationFrame(drawP);}
 drawP();
 
 const chat=document.getElementById("chat"),input=document.getElementById("message");
 let wakeWordEnabled=true,wakeActive=false,busy=false,wakeRecognition=null,commandRecognition=null;
+let lastPrompt="";
 const WAKE_PATTERNS=[/mach/i,/much/i,/vasan/i,/மச்சா/,/வசந்த/];
 
 let liveMode = false;
@@ -1604,7 +1788,15 @@ function typewriter(el,text,done){
     else if(done){ done(); }
   })();
 }
-function addMessage(t,type,time=null,imgSrc=null,animate=false,brain=""){
+function extractImgData(t){
+  let imgData=null;
+  const g=t.match(/\[\[GALLERY:(.*?)\]\]/);
+  if(g){imgData={type:"gallery",urls:g[1].split("|").filter(u=>u)};t=t.replace(g[0],"").trim();return [t,imgData];}
+  const s=t.match(/\[\[IMG:(.*?)\]\]/);
+  if(s){imgData={type:"single",url:s[1]};t=t.replace(s[0],"").trim();}
+  return [t,imgData];
+}
+function addMessage(t,type,time=null,imgData=null,animate=false,brain=""){
   const r=document.createElement("div");
   r.className="message-row "+(type==="user"?"user-row":type==="proactive"?"proactive-row":"ai-row");
   let av=null;
@@ -1615,7 +1807,45 @@ function addMessage(t,type,time=null,imgSrc=null,animate=false,brain=""){
   }
   const b=document.createElement("div");
   b.className="message "+(type==="proactive"?"ai":type);
-  if(imgSrc){const im=document.createElement("img");im.src=imgSrc;im.className="msg-img";b.appendChild(im);}
+  if(imgData){
+    if(imgData.type==="gallery" && imgData.urls && imgData.urls.length){
+      const grid=document.createElement("div");grid.className="gallery-grid";
+      imgData.urls.forEach(function(u,i){
+        const item=document.createElement("div");item.className="gallery-item";
+        const load=document.createElement("div");load.className="img-loading";load.textContent="🎨 Loading "+(i+1)+"...";
+        const im=document.createElement("img");im.alt="Generated "+(i+1);im.style.display="none";
+        const base=u.split("?")[0];
+        const prompt=decodeURIComponent(base.split("/prompt/")[1]||"cute cat");
+        const provs=[
+          function(s){return base+"?width=768&height=768&seed="+s+"&nologo=true";},
+          function(s){return base+"?width=640&height=640&seed="+s+"&model=turbo&nologo=true";},
+          function(s){return "/genimg?prompt="+encodeURIComponent(prompt)+"&r="+s;},
+          function(s){return base+"?width=640&height=640&seed="+s+"&model=flux&nologo=true";}
+        ];
+        let tries=0;
+        function setSrc(){
+          const pi=Math.min(Math.floor(tries/2),3);
+          const seed=Math.floor(Math.random()*1000000)+tries;
+          load.textContent=(pi===2?"🤗 HF ":"🎨 ")+(tries>0?"Retry "+tries:"Loading "+(i+1))+"...";
+          im.src=provs[pi](seed);
+        }
+        im.onload=function(){im.style.display="block";if(load.parentNode)load.remove();};
+        im.onerror=function(){
+          tries++;
+          if(tries<8){setTimeout(setSrc,2500);}
+          else{load.textContent="❌ Failed — tap to retry";item.onclick=function(){load.textContent="🔄 Retrying...";tries=0;setTimeout(setSrc,300);};}
+        };
+        setTimeout(setSrc, i*2500);
+        const ov=document.createElement("div");ov.className="gi-overlay";ov.innerHTML="<span>🔍</span>";
+        item.appendChild(load);item.appendChild(im);item.appendChild(ov);
+        item.addEventListener("click",function(){if(im.style.display==="block")openLightbox(im.src);});
+        grid.appendChild(item);
+      });
+      b.appendChild(grid);
+    } else if(imgData.type==="single" && imgData.url){
+      const im=document.createElement("img");im.src=imgData.url;im.className="msg-img";im.onclick=function(){openLightbox(imgData.url);};b.appendChild(im);
+    }
+  }
   const txt=document.createElement("div"); txt.className="msg-text"; b.appendChild(txt);
   const m=document.createElement("div");m.className="meta";
   let meta=type==="user"?"You":type==="proactive"?"🔮 Proactive":"Vasanth AI";
@@ -1642,26 +1872,50 @@ function addThinking(){
 function removeThinking(){const o=document.querySelector(".thinking");if(o)o.parentElement.remove();}
 function setVoiceStatus(t){const s=document.getElementById("voiceStatus");if(s)s.textContent=t;}
 function showIndicator(state,text){const ind=document.getElementById("wakeIndicator");ind.className="wake-word-indicator "+state;if(text)ind.querySelector(".wake-word-text").textContent=text;}
-function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**MEGA EDITION v2** 🎨📈🌍📰\n\n🥇 Gemini Voice • 📈 Crypto • 🌍 Translate • 📰 News\n⚙️ Settings la irukku — click pannu try pannu!\n\n**Try:** 'Bitcoin price' / 'Translate: hello to tamil' / 'News sollu'","ai");}
+function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**ROYAL AURORA EDITION** 💜\n\n🎨 **SDXL Gallery** - 4 HD images per draw!\n🔍 Tap image → Full view + Download + Regenerate\n🎯 Genius Brain • 🧠 Smart Memory\n✨ Mobile-ல **✨ button** tap பண்ணு!\n\n**Try:** 'Draw a cyberpunk city' / 'Bitcoin price'","ai");}
 async function loadHistory(){try{const r=await fetch("/history");if(!r.ok)throw new Error();const d=await r.json();chat.innerHTML="";if(!d.history||d.history.length===0){showWelcome();return;}d.history.forEach(i=>{
-  const isProactive = i.text && i.text.startsWith("[proactive]");
-  const cleanText = isProactive ? i.text.substring(12) : i.text;
-  addMessage(cleanText, isProactive ? "proactive" : (i.role==="user"?"user":"ai"));
+  let txt=i.text||"";
+  const ex=extractImgData(txt); txt=ex[0]; const imgData=ex[1];
+  const isProactive = txt.startsWith("[proactive]");
+  const cleanText = isProactive ? txt.substring(12) : txt;
+  addMessage(cleanText, isProactive ? "proactive" : (i.role==="user"?"user":"ai"), null, imgData);
 });}catch(e){showWelcome();}}
 async function clearChat(){if(!confirm("Clear history?"))return;try{await fetch("/clear",{method:"POST"});showWelcome();setVoiceStatus("🧠 Fresh ready");}catch(e){alert("Error");}}
 function changeVoice(){
   const voice=document.getElementById("voiceSelect").value;
   setVoiceStatus("🎤 Voice switching...");
   fetch("/change-voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({voice:voice})})
-    .then(r=>r.json()).then(d=>{ if(d.success){ setVoiceStatus("🎤 Voice: "+d.name); playTTS("Vanakkam macha! Naan "+d.name+" voice-la pesuren."); } })
+    .then(r=>r.json()).then(d=>{ if(d.success){ setVoiceStatus("🎤 Voice: "+d.name); if(voiceEnabled){playTTS("Vanakkam macha! Naan "+d.name+" voice-la pesuren.");} } })
     .catch(e=>setVoiceStatus("⚠️ Voice error"));
 }
-function playTTS(t){return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);a.onplay=()=>{setVoiceStatus("🔊 Speaking...");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});}
-function quickSend(t){input.value=t;sendMessage();}
+
+let currentAudio=null;let currentDone=null;
+function stopSpeaking(){
+  if(currentAudio){try{currentAudio.onended=null;currentAudio.onerror=null;currentAudio.pause();}catch(e){}currentAudio=null;}
+  fetch("/voice/stop",{method:"POST"}).catch(()=>{});
+  if(currentDone){const d=currentDone;currentDone=null;d();}
+  else{document.body.classList.remove("speaking");setVoiceStatus("🔇 Muted");}
+}
+function playTTS(t){return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);currentAudio=a;a.onplay=()=>{setVoiceStatus("🔊 Speaking... (waveform tap = STOP)");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{currentAudio=null;currentDone=null;document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};currentDone=done;a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});}
+
+function openLightbox(url){
+  const lb=document.getElementById("lightbox");
+  document.getElementById("lbImg").src=url;
+  document.getElementById("lbDownload").href=url;
+  lb.classList.add("show");
+}
+function closeLightbox(){document.getElementById("lightbox").classList.remove("show");}
+function regenImage(){
+  closeLightbox();
+  const p=lastPrompt||"a cute robot in neon style";
+  input.value="Draw "+p;sendMessage();
+}
+
+function quickSend(t){toggleSheet(false);input.value=t;sendMessage();}
 function finishCycle(){busy=false;showIndicator("","");if(liveMode){setTimeout(startLiveListen,400);}else if(wakeWordEnabled){setTimeout(startWake,600);}}
-async function sendMessage(){const t=input.value.trim();if(!t){finishCycle();return;}busy=true;stopWake();addMessage(t,"user");input.value="";addThinking();setVoiceStatus(" Thinking...");showIndicator("listening","Processing...");try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:t})});if(!r.ok)throw new Error();const d=await r.json();removeThinking();addMessage(d.reply||"...", "ai",null,d.image||null,true,d.brain||"");await playTTS(d.reply||"");finishCycle();}catch(e){removeThinking();addMessage("Server error","ai");setVoiceStatus("🔴 Error");finishCycle();}}
-function pickImage(){document.getElementById("imageInput").click();}
-async function onImagePicked(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async function(){const dataURL=reader.result;const q=input.value.trim()||"Idhula enna iruku?";busy=true;stopWake();addMessage("📷 "+q,"user",null,dataURL);input.value="";addThinking();try{const r=await fetch("/vision",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:dataURL,question:q})});const d=await r.json();removeThinking();addMessage(d.reply,"ai",null,null,true,d.brain||"");await playTTS(d.reply);finishCycle();}catch(err){removeThinking();addMessage("Vision error","ai");finishCycle();}};reader.readAsDataURL(file);e.target.value="";}
+async function sendMessage(){const t=input.value.trim();if(!t){finishCycle();return;}busy=true;stopWake();addMessage(t,"user");if(/draw|image|generate|picture|படம்|ஓவியம்/i.test(t)){lastPrompt=t.replace(/^(draw|generate|create|make|படம்)\s+/i,"");}input.value="";addThinking();setVoiceStatus(" Thinking...");showIndicator("listening","Processing...");try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:t})});if(!r.ok)throw new Error();const d=await r.json();removeThinking();addMessage(d.reply||"...", "ai",null,d.image||null,true,d.brain||"");if(voiceEnabled){await playTTS(d.reply||"");}finishCycle();}catch(e){removeThinking();addMessage("Server error","ai");setVoiceStatus("🔴 Error");finishCycle();}}
+function pickImage(){toggleSheet(false);document.getElementById("imageInput").click();}
+async function onImagePicked(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async function(){const dataURL=reader.result;const q=input.value.trim()||"Idhula enna iruku?";busy=true;stopWake();addMessage("📷 "+q,"user",null,dataURL);input.value="";addThinking();try{const r=await fetch("/vision",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:dataURL,question:q})});const d=await r.json();removeThinking();addMessage(d.reply,"ai",null,null,true,d.brain||"");if(voiceEnabled){await playTTS(d.reply);}finishCycle();}catch(err){removeThinking();addMessage("Vision error","ai");finishCycle();}};reader.readAsDataURL(file);e.target.value="";}
 function detectWake(t){t=t.toLowerCase().trim();for(const p of WAKE_PATTERNS){const m=p.exec(t);if(m)return t.slice(m.index+m[0].length).trim();}return null;}
 function stopWake(){if(wakeRecognition){try{wakeRecognition.onend=null;wakeRecognition.onerror=null;wakeRecognition.stop();}catch(e){}wakeRecognition=null;}wakeActive=false;}
 function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "Macha"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{startCommandRecognition();}}};wakeRecognition.onerror=()=>{};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
@@ -1673,6 +1927,8 @@ window.addEventListener("beforeinstallprompt",(e)=>{e.preventDefault();deferredP
 function installApp(){if(!deferredPrompt)return;deferredPrompt.prompt();deferredPrompt.userChoice.then(r=>{if(r.outcome==="accepted")document.getElementById("installBtn").style.display="none";deferredPrompt=null;});}
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js").catch(e=>{});});}
 input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();sendMessage();}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){stopSpeaking();closeLightbox();toggleSheet(false);}});
+document.getElementById("lightbox").addEventListener("click",function(e){if(e.target===this)closeLightbox();});
 loadHistory();setTimeout(startWake,1000);
 </script>
 </body>
@@ -1739,8 +1995,8 @@ def command():
     except Exception as e:
         import traceback; traceback.print_exc()
         result = f"மச்சா 😅 Chinna error: {e}"
-    reply, image = strip_img_token(result)
-    return jsonify({"reply": reply, "brain": LAST_BRAIN, "image": image})
+    reply, image_data = strip_img_token(result)
+    return jsonify({"reply": reply, "brain": LAST_BRAIN, "image": image_data})
 
 @app.route("/change-voice", methods=["POST"])
 def change_voice():
@@ -1751,6 +2007,30 @@ def change_voice():
     EDGE_TTS_VOICE = prof["voice"]; EDGE_TTS_RATE = prof["rate"]; EDGE_TTS_PITCH = prof["pitch"]
     print(f"🎤 Voice profile: {prof['label']}")
     return jsonify({"success": True, "name": prof["label"]})
+
+@app.route("/voice/on", methods=["POST"])
+def voice_on():
+    global VOICE_ENABLED
+    VOICE_ENABLED = True
+    print("🔊 Voice ON")
+    return jsonify({"success": True})
+
+@app.route("/voice/off", methods=["POST"])
+def voice_off():
+    global VOICE_ENABLED
+    VOICE_ENABLED = False
+    print("🔇 Voice OFF")
+    return jsonify({"success": True})
+
+@app.route("/voice/stop", methods=["POST"])
+def voice_stop():
+    try:
+        ctypes.windll.winmm.mciSendStringW('stop vasanth_audio', None, 0, 0)
+        ctypes.windll.winmm.mciSendStringW('close vasanth_audio', None, 0, 0)
+        print("⏹️ Voice stopped (PC speaker)")
+    except Exception as e:
+        print(f"Voice stop error: {e}")
+    return jsonify({"success": True})
 
 @app.route("/gesture/on", methods=["POST"])
 def gesture_on():
@@ -1775,7 +2055,7 @@ def pwa_manifest():
     return jsonify({
         "name": "Vasanth AI",
         "short_name": "Vasanth AI",
-        "description": "AI assistant with cloud + local features",
+        "description": "AI assistant with genius brain + smart memory + SDXL gallery",
         "start_url": "/", "scope": "/", "display": "standalone",
         "background_color": "#0f0a1e", "theme_color": "#e879f9", "orientation": "portrait",
         "icons": [
@@ -1812,7 +2092,7 @@ if __name__ == "__main__":
     threading.Thread(target=telegram_bot_thread, daemon=True).start()
     threading.Thread(target=proactive_thread, daemon=True).start()
     print("\n" + "=" * 60)
-    print("    VASANTH AI - MEGA EDITION v2 🎨📈🌍📰")
+    print("    VASANTH AI - ROYAL AURORA 💜 (SDXL GALLERY EDITION)")
     print("=" * 60)
     print(f"Groq:     {'READY ✅' if GROQ_API_KEY else 'MISSING ❌'}")
     print(f"AWS:      {'READY ✅' if AWS_READY else 'Not configured'}")
@@ -1820,9 +2100,11 @@ if __name__ == "__main__":
     print(f"Telegram: {'READY ✅' if (TELEGRAM_AVAILABLE and TELEGRAM_BOT_TOKEN) else 'Not configured'}")
     print(f"Gemini:   {'🥇 NATURAL VOICE READY' if GEMINI_API_KEY else 'NOT SET (fallback)'}")
     print(f"Lameenc:  {'✅ MP3 encoder' if LAMEENC_READY else '❌ pip install lameenc'}")
-    print(f"Crypto:   📈 CoinGecko LIVE")
-    print(f"Translate:🌍 AI Multi-language")
-    print(f"News:     📰 DDG News Tamil")
+    print(f"Brain:    🧠 Genius Mode (step-by-step thinking)")
+    print(f"Memory:   🧠 Smart Memory (query-aware)")
+    print(f"Images:   🎨 SDXL Flux 4-image Gallery + Lightbox")
+    print(f"Voice:    🔊 ON/OFF + STOP controls")
+    print(f"Local:    🖥️ Qwen 2.5 (offline brain)")
     print("=" * 60 + "\n")
     threading.Thread(target=open_browser, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False, use_reloader=False)
