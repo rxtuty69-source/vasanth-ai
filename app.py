@@ -210,6 +210,9 @@ SPECIAL ACTION RULES:
 - CLICK: [CLICK: x,y] or [CLICK: center]
 - TYPE: [TYPE: text]
 - SCROLL: [SCROLL: up/down/amount]
+- CRYPTO PRICE: [CRYPTO: coin name]
+- TRANSLATE: [TRANSLATE: target_language|text to translate]
+- NEWS: [NEWS: category (tamil/sports/tech/cinema/world)]
 When using these special actions, DO NOT write any other text, just the bracketed command.
 """
 
@@ -239,7 +242,7 @@ PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>'''
 
 PWA_SERVICE_WORKER = '''
-const CACHE = 'vasanth-ai-v14';
+const CACHE = 'vasanth-ai-v15';
 const CORE = ['/', '/manifest.json', '/logo.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -320,7 +323,6 @@ def play_mp3_native(path):
         os.system(f'start "" "{path}"')
 
 def save_audio_file(audio_buffer, mime, base_name):
-    """Save audio buffer with correct extension, return path"""
     ext = "wav" if mime == "audio/wav" else "mp3"
     path = os.path.join(DATA_DIR, f"{base_name}.{ext}")
     with open(path, "wb") as f:
@@ -433,6 +435,63 @@ def weather_report():
     if temp is None: return smart_web_search("Chennai weather today temperature")
     rain_note = "— umbrella venum macha! 🌂" if rain >= 50 else "— problem illa! ☀️"
     return f"Macha! Chennai ippo **{temp}°C** iruku. Mazhai chance **{rain}%** {rain_note}"
+
+# ============================================================
+# 📈 CRYPTO TRACKER (CoinGecko FREE API)
+# ============================================================
+COIN_IDS = {"bitcoin":"bitcoin","btc":"bitcoin","ethereum":"ethereum","eth":"ethereum",
+"dogecoin":"dogecoin","doge":"dogecoin","solana":"solana","sol":"solana","ripple":"ripple",
+"xrp":"ripple","cardano":"cardano","ada":"cardano","shib":"shiba-inu","shiba":"shiba-inu",
+"bnb":"binancecoin","binance":"binancecoin","tether":"tether","usdt":"tether"}
+
+def get_crypto(coin="bitcoin"):
+    try:
+        coin_id = COIN_IDS.get(coin.lower(), coin.lower())
+        r = requests.get(f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd,inr&include_24hr_change=true", timeout=10)
+        d = r.json()
+        if coin_id in d:
+            usd = d[coin_id].get("usd", 0)
+            inr = d[coin_id].get("inr", 0)
+            change = d[coin_id].get("usd_24h_change", 0)
+            trend = "📈" if change >= 0 else "📉"
+            return f"{coin_id.capitalize()} ippo: **${usd:,.2f}** (₹{inr:,.2f}) {trend} 24h: {change:+.2f}%"
+    except Exception as e:
+        print(f"Crypto error: {e}")
+    return smart_web_search(f"{coin} price today")
+
+# ============================================================
+# 🌍 TRANSLATOR (AI-powered, any language)
+# ============================================================
+def translate_text(text, target="english"):
+    try:
+        prompt = f"Translate the following text to {target}. Return ONLY the translation, nothing else.\n\nText: {text}"
+        messages = [{"role":"system","content":"You are a professional translator. Return only the translation."},{"role":"user","content":prompt}]
+        reply = _groq_complete(messages)
+        return reply if reply else "Translate panna mudiyala macha 😅"
+    except Exception as e:
+        print(f"Translate error: {e}")
+        return "Translate panna mudiyala macha 😅"
+
+# ============================================================
+# 📰 NEWS READER (DuckDuckGo News)
+# ============================================================
+def get_news(category="tamil"):
+    try:
+        queries = {"tamil":"latest Tamil news","sports":"sports news today","tech":"technology news",
+                   "cinema":"Tamil cinema news","world":"world news today","india":"India news today"}
+        q = queries.get(category.lower(), f"{category} news")
+        with DDGS() as ddgs:
+            results = list(ddgs.news(q, max_results=5))
+        headlines = [r.get("title","") for r in results if r.get("title")]
+        if headlines:
+            summary = "\n".join([f"• {h}" for h in headlines[:5]])
+            prompt = f"Read these headlines and give a short friendly Tamil (Tanglish) news briefing in 4-5 lines. Call user 'macha'.\n\n{summary}"
+            messages = [{"role":"system","content":"You are Vasanth AI. Give news briefing in natural Tamil."},{"role":"user","content":prompt}]
+            reply = _groq_complete(messages)
+            return reply if reply else summary
+    except Exception as e:
+        print(f"News error: {e}")
+    return smart_web_search(f"{category} news today")
 
 def take_screenshot():
     try:
@@ -955,13 +1014,11 @@ def gemini_tts(text):
             try: rate = int(mime.split("rate=")[1].split(";")[0])
             except: rate = 24000
         
-        # MP3 first (browser-friendly)
         mp3_buf = pcm_to_mp3(pcm, rate)
         if mp3_buf:
             print(f"🥇 Gemini TTS success (MP3, {mp3_buf.getbuffer().nbytes} bytes) - NATURAL!")
             return mp3_buf, "audio/mpeg"
         
-        # WAV fallback
         wav_bytes = pcm_to_wav(pcm, rate)
         buf = io.BytesIO(wav_bytes); buf.seek(0)
         print(f"🥇 Gemini TTS success (WAV, {len(wav_bytes)} bytes)")
@@ -1029,18 +1086,15 @@ def generate_tts(text):
         if not cleaned_text:
             return None, "No speakable text", "audio/mpeg"
         
-        # 1) GEMINI (best natural voice, MP3 via lameenc)
         result = gemini_tts(cleaned_text)
         if result:
             buf, mime = result
             return buf, None, mime
         
-        # 2) GOOGLE (unlimited, native MP3)
         buf = google_tts(cleaned_text)
         if buf:
             return buf, None, "audio/mpeg"
         
-        # 3) EDGE (unlimited, native MP3)
         buf = asyncio.run(_generate_edge_tts_async(cleaned_text))
         if buf and buf.getbuffer().nbytes > 0:
             return buf, None, "audio/mpeg"
@@ -1151,7 +1205,6 @@ def process_command(original_text):
         reply = summarize_youtube(yt_link.group(1)); add_to_memory("user", original_text); add_to_memory("model", reply); return reply
 
     ai_reply = ask_groq(original_text)
-    # FIXED: None-safety
     if not ai_reply:
         ai_reply = "மச்சா 😅 AI-க்கு ஒரு chinna issue. Thirumba try pannunga."
     final_reply = ai_reply
@@ -1184,6 +1237,9 @@ def process_command(original_text):
     process_match = re.search(r'\[PROCESS:\s*(.*?)\]', ai_reply, re.IGNORECASE)
     clip_match = re.search(r'\[CLIP:\s*(.*?)\]', ai_reply, re.IGNORECASE)
     power_match = re.search(r'\[POWER:\s*(.*?)\]', ai_reply, re.IGNORECASE)
+    crypto_match = re.search(r'\[CRYPTO:\s*(.*?)\]', ai_reply, re.IGNORECASE)
+    translate_match = re.search(r'\[TRANSLATE:\s*(.*?)\|(.*?)\]', ai_reply, re.IGNORECASE)
+    news_match = re.search(r'\[NEWS:\s*(.*?)\]', ai_reply, re.IGNORECASE)
 
     if image_match:
         img_url = generate_image(image_match.group(1).strip())
@@ -1259,6 +1315,13 @@ def process_command(original_text):
         final_reply = get_cricket_score(cricket_match.group(1).strip()); conversation_history[-1]["text"] = final_reply; save_history()
     elif reminder_match:
         final_reply = set_reminder(reminder_match.group(1).strip(), reminder_match.group(2).strip()); conversation_history[-1]["text"] = final_reply; save_history()
+    elif crypto_match:
+        final_reply = get_crypto(crypto_match.group(1).strip()); conversation_history[-1]["text"] = final_reply; save_history()
+    elif translate_match:
+        final_reply = translate_text(translate_match.group(2).strip(), translate_match.group(1).strip())
+        conversation_history[-1]["text"] = final_reply; save_history()
+    elif news_match:
+        final_reply = get_news(news_match.group(1).strip()); conversation_history[-1]["text"] = final_reply; save_history()
 
     return final_reply
 
@@ -1428,6 +1491,9 @@ input::placeholder { color: #6b5b8a; }
             <button class="quick-btn" onclick="quickSend('Weather enna?')">🌦️ Weather</button>
             <button class="quick-btn" onclick="quickSend('Good morning')">🌅 Morning</button>
             <button class="quick-btn" onclick="quickSend('India cricket score enna?')">🏏 Cricket</button>
+            <button class="quick-btn" onclick="quickSend('Bitcoin price enna?')">📈 Crypto</button>
+            <button class="quick-btn" onclick="quickSend('Translate: vanakkam to english')">🌍 Translate</button>
+            <button class="quick-btn" onclick="quickSend('Today news sollu')">📰 News</button>
             <button class="quick-btn" onclick="quickSend('Take screenshot')">📸 Screenshot</button>
             <button class="quick-btn" onclick="quickSend('Minimize all windows')">🗔 Minimize</button>
             <button class="quick-btn" onclick="quickSend('Battery status enna?')">🔋 Battery</button>
@@ -1449,7 +1515,6 @@ const wakeBeep = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAA
 function playWakeBeep(){ try{ wakeBeep.currentTime=0; wakeBeep.play().catch(e=>{}); }catch(e){} }
 const MOOD_EMOJI = { happy:"😊 Happy", sad:"😢 Sad", excited:"🤩 Excited", tired:"😴 Tired", angry:"😠 Angry", neutral:"😐 Neutral", curious:"🤓 Curious" };
 
-// AUDIO UNLOCK: First click/keypress allows autoplay (fixes browser block)
 function unlockAudio(){
   try{
     const a = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
@@ -1580,7 +1645,7 @@ function addThinking(){
 function removeThinking(){const o=document.querySelector(".thinking");if(o)o.parentElement.remove();}
 function setVoiceStatus(t){const s=document.getElementById("voiceStatus");if(s)s.textContent=t;}
 function showIndicator(state,text){const ind=document.getElementById("wakeIndicator");ind.className="wake-word-indicator "+state;if(text)ind.querySelector(".wake-word-text").textContent=text;}
-function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**MEGA EDITION (BUG-FREE)** ready! 🎨🎬️🖥️\n\n🥇 **Gemini Natural Voice** - MP3 via lameenc (no ffmpeg!)\n🎨 **AI Image Gen** - 'Draw a cute robot' nu sollu!\n🎬 **YouTube Summarizer** - link paste pannu!\n🌧️ **Weather Alerts** - mazhai auto-alert!\n🖥️ **PC Master Control** - full access!\n\n**Try:** 'Draw a neon cat' / 'Weather enna?'","ai");}
+function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**MEGA EDITION v2** ready! 🎨🎬️🖥️\n\n🥇 **Gemini Natural Voice** - MP3 via lameenc\n🎨 **AI Image Gen** - 'Draw a cute robot'\n🎬 **YouTube Summarizer**\n🌧️ **Weather Alerts**\n📈 **Crypto Tracker** - BTC, ETH live!\n🌍 **Translator** - Any language\n📰 **News Reader** - Tamil briefing\n🖥️ **PC Master Control**\n\n**Try:** 'Bitcoin price' / 'Translate: hello to tamil'","ai");}
 async function loadHistory(){try{const r=await fetch("/history");if(!r.ok)throw new Error();const d=await r.json();chat.innerHTML="";if(!d.history||d.history.length===0){showWelcome();return;}d.history.forEach(i=>{
   const isProactive = i.text && i.text.startsWith("[proactive]");
   const cleanText = isProactive ? i.text.substring(12) : i.text;
@@ -1746,7 +1811,7 @@ if __name__ == "__main__":
     threading.Thread(target=telegram_bot_thread, daemon=True).start()
     threading.Thread(target=proactive_thread, daemon=True).start()
     print("\n" + "=" * 60)
-    print("    VASANTH AI - MEGA EDITION (BUG-FREE) 🎨🎬🌧️️")
+    print("    VASANTH AI - MEGA EDITION v2 🎨🎬🌧️️📈🌍📰")
     print("=" * 60)
     print(f"Groq:     {'READY ✅' if GROQ_API_KEY else 'MISSING ❌'}")
     print(f"AWS:      {'READY ✅' if AWS_READY else 'Not configured'}")
@@ -1758,6 +1823,9 @@ if __name__ == "__main__":
     print(f"Image:    🎨 Pollinations (FREE)")
     print(f"YouTube:  🎬 Transcript Summarizer")
     print(f"Weather:  🌧️ Open-Meteo (auto alerts)")
+    print(f"Crypto:   📈 CoinGecko (LIVE)")
+    print(f"Translate:🌍 Multi-language AI")
+    print(f"News:     📰 DDG News (Tamil)")
     print(f"Memory:   🧠 PERMANENT")
     print(f"Mood:     🎭 Emotion Detection ON")
     print(f"Proactive:🔮 Background speaker ON")
