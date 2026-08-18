@@ -1,0 +1,11 @@
+flask
+openai
+edge-tts
+requests
+duckduckgo-search
+python-telegram-bot
+psutil
+gTTS
+lameenc
+google-genai
+gunicorn
