@@ -188,27 +188,18 @@ LANGUAGE & TONE RULES:
 - Speak in natural Tanglish (Tamil + English mix), like a smart Chennai friend.
 - Call Vasanth "macha". BE HUMAN with fillers like "Hmm...", "Aama macha...", "Sari...".
 - Use **bold** for important words.
+- NEVER use emojis in voice responses (audio only).
+- Keep voice responses concise (under 200 words) for TTS smoothness.
 
-⏰ TIME AWARENESS (VERY IMPORTANT):
+⏰ TIME AWARENESS:
 - Current year is **2026** (not 2024 or 2025!)
-- You know the exact current date and time from the system
-- When asked "என்ன தேதி?" or "what year is it?", answer with the REAL current date
-- Reference 2026 events naturally (e.g., "இந்த 2026-ல...", "last year 2025-ல...")
-- For future predictions, say "இந்த 2026-ல..." or "2027-ல..."
+- Reference 2026 events naturally.
 
-🧠 GENIUS THINKING RULES (VERY IMPORTANT):
-Before giving the final answer, you MUST think step-by-step inside  tags.
-Example:
-
-1. User is asking for a plan to learn Python in 1 week.
-2. I should break it into daily goals with realistic hours.
-3. I should mention free resources and a final project.
-4. I will keep the tone friendly Tanglish.
-
-[Your final Tanglish response here]
+🧠 GENIUS THINKING RULES:
+Before giving the final answer, think step-by-step inside  tags.
 (The system hides the  tags automatically, so think freely!)
 
-SPECIAL ACTION RULES:
+SPECIAL ACTION RULES (use these when relevant):
 - AI IMAGE GEN: [IMAGE: detailed english description]
 - YOUTUBE SUMMARY: [YT: video url]
 - WEATHER: [WEATHER]
@@ -236,7 +227,7 @@ SPECIAL ACTION RULES:
 - CRYPTO PRICE: [CRYPTO: coin name]
 - TRANSLATE: [TRANSLATE: target_language|text to translate]
 - NEWS: [NEWS: category (tamil/sports/tech/cinema/world)]
-When using these special actions, DO NOT write any other text outside the think tags, just the bracketed command.
+When using special actions, DO NOT write any other text outside the think tags.
 """
 
 PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -253,26 +244,20 @@ PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 <rect x="126" y="220" width="260" height="12" fill="#1e1b4b"/>
 <rect x="126" y="252" width="260" height="16" fill="#1e1b4b"/>
 <rect x="126" y="290" width="260" height="20" fill="#1e1b4b"/>
-<g stroke="#e879f9" stroke-width="6" fill="none" opacity=".7">
-<path d="M86 370 h340 M86 410 h340 M86 450 h340"/>
-<path d="M176 370 l-50 100 M256 370 v100 M336 370 l50 100"/>
-</g>
 <rect x="186" y="140" width="140" height="100" rx="26" fill="#0f0a1e" stroke="#f5d0fe" stroke-width="8"/>
 <circle cx="222" cy="190" r="15" fill="#f5d0fe"/>
 <circle cx="290" cy="190" r="15" fill="#f5d0fe"/>
-<rect x="246" y="96" width="20" height="44" rx="10" fill="#f5d0fe"/>
-<circle cx="256" cy="88" r="14" fill="#e879f9"/>
 </svg>'''
 
 PWA_SERVICE_WORKER = '''
-const CACHE = 'vasanth-ai-v22';
+const CACHE = 'vasanth-ai-v23';
 const CORE = ['/', '/manifest.json', '/logo.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop'].includes(url.pathname)) return;
+  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/genimg','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop'].includes(url.pathname)) return;
   e.respondWith(fetch(e.request).then((res) => { if (res.ok) { const clone = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, clone)); } return res; }).catch(() => caches.match(e.request).then((m) => m || caches.match('/'))));
 });
 '''
@@ -401,14 +386,14 @@ def get_memory_context(query=""):
         chosen = list(dict.fromkeys(top + recent))
     else:
         chosen = facts[-12:]
-    return ("\nLONG-TERM MEMORY (things you REMEMBER about Vasanth):\n- " + "\n- ".join(chosen) + "\nUse these naturally when relevant.\n")
+    return ("\nLONG-TERM MEMORY:\n- " + "\n- ".join(chosen) + "\nUse these naturally when relevant.\n")
 
 def build_system(query=""):
     return SYSTEM_PROMPT + get_memory_context(query) + get_mood_context()
 
 def extract_and_store_memories(user_text):
     try:
-        prompt = (f"Extract personal facts about the user. Return ONLY a valid JSON array of short fact strings. If none, return [].\nMessage: {user_text}")
+        prompt = f"Extract personal facts about the user. Return ONLY a valid JSON array of short fact strings. If none, return [].\nMessage: {user_text}"
         messages = [{"role":"system","content":"You extract personal facts. Return ONLY a valid JSON array."},{"role":"user","content":prompt}]
         reply = _groq_complete(messages)
         if not reply: return
@@ -427,7 +412,6 @@ def extract_and_store_memories(user_text):
         print(f"Memory extract error: {e}")
 
 def generate_image(prompt, n=4):
-    """Generate n HD images via Pollinations (simple URL = more reliable)"""
     try:
         urls = []
         for i in range(n):
@@ -441,10 +425,11 @@ def generate_image(prompt, n=4):
         print(f"Image error: {e}")
         return None
 
-HF_TOKEN = os.getenv("HF_TOKEN", "")
+HF_TOKEN = os.getenv("HF_TOKEN", "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")
 
 def hf_generate(prompt):
-    """HuggingFace FREE inference (FLUX schnell → SDXL) — reliable backup"""
+    if not HF_TOKEN or not HF_TOKEN.startswith("hf_"):
+        return None
     try:
         from huggingface_hub import InferenceClient
         client = InferenceClient(token=HF_TOKEN)
@@ -468,7 +453,7 @@ def genimg():
     prompt = request.args.get("prompt", "cute cat")
     buf = hf_generate(prompt)
     if buf is None:
-        return Response("generation failed", status=500)
+        return Response("generation failed", status=503)
     return send_file(buf, mimetype="image/jpeg")
 
 def summarize_youtube(url):
@@ -769,7 +754,6 @@ def launch_app(app_name):
 
 def get_cricket_score(query=""):
     try:
-        print(f"\n🏏 CRICKET QUERY: {query}")
         try:
             response = requests.get("https://api.cricapi.com/v1/currentMatches?apikey=free", timeout=10)
             if response.status_code == 200:
@@ -859,7 +843,6 @@ def ask_ollama(messages):
 
 def smart_web_search(query):
     try:
-        print(f"\n🔍 Smart Web Search: {query}")
         results = []
         for search_q in [query, f"{query} latest", f"{query} 2026"]:
             try:
@@ -974,7 +957,6 @@ def ask_groq(user_text):
     if groq_client:
         for model in models_to_try:
             try:
-                print(f"\n========== GROQ TEXT ({model}) ==========\nUser: {user_text}\n===============================")
                 messages = [{"role":"system","content":build_system(user_text)}]
                 messages.extend(get_openai_history())
                 messages.append({"role":"user","content":user_text})
@@ -986,11 +968,10 @@ def ask_groq(user_text):
                 return reply
             except Exception as error:
                 error_str = str(error)
-                print(f"GROQ ERROR ({model}): {error_str}")
+                print(f"GROQ ERROR ({model}): {error_str[:100]}")
                 if any(k in error_str.lower() for k in ["429","rate_limit","404","decommission","connect","network","unreachable","refused","timeout","dns","resolve"]): continue
                 return "மச்சா 😅 Groq AI-ல ஒரு பிரச்சனை வந்திருக்கு."
     if AWS_READY:
-        print("\n⚠️ All Groq models failed. Switching to AWS Bedrock...")
         messages = [{"role":"system","content":build_system(user_text)}]
         messages.extend(get_openai_history()); messages.append({"role":"user","content":user_text})
         bedrock_reply = ask_bedrock(messages)
@@ -998,7 +979,6 @@ def ask_groq(user_text):
             add_to_memory("user", user_text); add_to_memory("model", bedrock_reply)
             return bedrock_reply
     if OLLAMA_READY:
-        print("\n🖥️ Switching to LOCAL Ollama (OFFLINE MODE)...")
         messages = [{"role":"system","content":build_system(user_text)}]
         messages.extend(get_openai_history()); messages.append({"role":"user","content":user_text})
         ollama_reply = ask_ollama(messages)
@@ -1031,7 +1011,7 @@ def pcm_to_mp3(pcm_bytes, rate=24000):
             mp3_data = enc.encode(pcm_bytes) + enc.flush()
             buf = io.BytesIO(mp3_data)
             buf.seek(0)
-            print(f"🎵 LAME MP3 encoded ({len(mp3_data)} bytes) - NO FFMPEG!")
+            print(f"🎵 LAME MP3 encoded ({len(mp3_data)} bytes)")
             return buf
         except Exception as e:
             print(f"⚠️ lameenc failed: {e}")
@@ -1059,9 +1039,17 @@ def gemini_tts(text):
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=GEMINI_API_KEY)
+        # CLEAN TEXT ONLY for TTS - no markdown, no tags
+        clean = text.replace("**","").replace("*","").replace("`","")
+        clean = re.sub(r'\[\[.*?\]\]','',clean)  # Remove [[IMG:]] etc
+        clean = re.sub(r'\[.*?\]','',clean)
+        clean = re.sub(r'[*_#>]','',clean)
+        clean = re.sub(r'\s+',' ',clean).strip()[:1000]
+        if len(clean) < 3:
+            return None
         resp = client.models.generate_content(
             model="gemini-2.5-flash-preview-tts",
-            contents=text,
+            contents=clean,
             config=types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
                 speech_config=types.SpeechConfig(
@@ -1078,21 +1066,19 @@ def gemini_tts(text):
         if "rate=" in mime:
             try: rate = int(mime.split("rate=")[1].split(";")[0])
             except: rate = 24000
-        
         mp3_buf = pcm_to_mp3(pcm, rate)
         if mp3_buf:
-            print(f"🥇 Gemini TTS success (MP3, {mp3_buf.getbuffer().nbytes} bytes) - NATURAL!")
+            print(f"🥇 Gemini TTS success (MP3) - NATURAL!")
             return mp3_buf, "audio/mpeg"
-        
         wav_bytes = pcm_to_wav(pcm, rate)
         buf = io.BytesIO(wav_bytes); buf.seek(0)
-        print(f"🥇 Gemini TTS success (WAV, {len(wav_bytes)} bytes)")
+        print(f"🥇 Gemini TTS success (WAV)")
         return buf, "audio/wav"
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
             GEMINI_TTS_BLOCKED_DAY = today
-            print("🚫 Gemini TTS quota (10/day) முடிஞ்சுது — இன்று Google TTS!")
+            print("🚫 Gemini TTS quota முடிஞ்சுது — Google TTS use பண்றேன்!")
         else:
             print(f"⚠️ Gemini TTS failed: {e}")
         return None
@@ -1101,7 +1087,10 @@ def google_tts(text):
     try:
         from gtts import gTTS
         buf = io.BytesIO()
-        gTTS(text=text, lang='ta', slow=False).write_to_fp(buf)
+        clean = text.replace("**","").replace("*","").replace("`","")
+        clean = re.sub(r'\[.*?\]','',clean)
+        clean = re.sub(r'\s+',' ',clean).strip()[:1500]
+        gTTS(text=clean, lang='ta', slow=False).write_to_fp(buf)
         buf.seek(0)
         if buf.getbuffer().nbytes > 0:
             print("✅ Google TTS success (MP3, unlimited)")
@@ -1114,59 +1103,55 @@ EMOJI_PATTERN = re.compile("[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F68
 
 def clean_text_for_tts(text):
     text = EMOJI_PATTERN.sub(" ", str(text))
-    text = re.sub(r"[*_#`>\[\]]+", " ", text)
+    text = re.sub(r"\[\[.*?\]\]", "", text)
+    text = re.sub(r"\[.*?\]", "", text)
+    text = re.sub(r"[*_#`>]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:5000] if len(text) > 5000 else text
+    return text[:2000] if len(text) > 2000 else text
 
 async def _generate_edge_tts_async(text):
     global EDGE_TTS_VOICE
     try:
         voice_to_use = EDGE_TTS_VOICE
-        print(f"🎙️ Trying voice: {voice_to_use} (rate={EDGE_TTS_RATE}, pitch={EDGE_TTS_PITCH})")
-        try:
-            communicate = edge_tts.Communicate(text, voice_to_use, rate=EDGE_TTS_RATE, pitch=EDGE_TTS_PITCH, volume=EDGE_TTS_VOLUME)
-            audio_buffer = io.BytesIO()
-            async for chunk in communicate.stream():
-                if chunk.get("type")=="audio": audio_buffer.write(chunk.get("data", b""))
-            audio_buffer.seek(0)
-            if audio_buffer.getbuffer().nbytes == 0: raise Exception("Empty audio buffer")
-            print(f"✅ Voice {voice_to_use} success ({audio_buffer.getbuffer().nbytes} bytes)")
-            return audio_buffer
-        except Exception as first_error:
-            print(f"⚠️ Voice {voice_to_use} failed: {first_error}")
-            if voice_to_use != "ta-IN-PallaviNeural":
-                print("🔄 Falling back to Pallavi...")
-                EDGE_TTS_VOICE = "ta-IN-PallaviNeural"
-                communicate = edge_tts.Communicate(text, "ta-IN-PallaviNeural", rate=EDGE_TTS_RATE, pitch=EDGE_TTS_PITCH, volume=EDGE_TTS_VOLUME)
-                audio_buffer = io.BytesIO()
-                async for chunk in communicate.stream():
-                    if chunk.get("type")=="audio": audio_buffer.write(chunk.get("data", b""))
-                audio_buffer.seek(0)
-                print("✅ Fallback to Pallavi success")
-                return audio_buffer
-            else: raise first_error
+        communicate = edge_tts.Communicate(text, voice_to_use, rate=EDGE_TTS_RATE, pitch=EDGE_TTS_PITCH, volume=EDGE_TTS_VOLUME)
+        audio_buffer = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk.get("type")=="audio": audio_buffer.write(chunk.get("data", b""))
+        audio_buffer.seek(0)
+        if audio_buffer.getbuffer().nbytes == 0: raise Exception("Empty audio buffer")
+        print(f"✅ Edge TTS success ({voice_to_use})")
+        return audio_buffer
     except Exception as e:
         print(f"❌ Edge TTS error: {e}"); raise
 
 def generate_tts(text):
     try:
         cleaned_text = clean_text_for_tts(text)
-        if not cleaned_text:
+        if not cleaned_text or len(cleaned_text) < 3:
             return None, "No speakable text", "audio/mpeg"
         
+        # ⚡ FAST PATH: Short replies (< 300 chars) → Google TTS first (instant!)
+        if len(cleaned_text) < 300:
+            buf = google_tts(cleaned_text)
+            if buf:
+                print(f"⚡ Fast Google TTS ({len(cleaned_text)} chars)")
+                return buf, None, "audio/mpeg"
+        
+        # 🎯 LONG PATH: Gemini first (natural voice for longer text)
         result = gemini_tts(cleaned_text)
         if result:
             buf, mime = result
             return buf, None, mime
         
+        # Fallback chain
         buf = google_tts(cleaned_text)
         if buf:
             return buf, None, "audio/mpeg"
-        
-        buf = asyncio.run(_generate_edge_tts_async(cleaned_text))
-        if buf and buf.getbuffer().nbytes > 0:
-            return buf, None, "audio/mpeg"
-        
+        try:
+            buf = asyncio.run(_generate_edge_tts_async(cleaned_text))
+            if buf and buf.getbuffer().nbytes > 0:
+                return buf, None, "audio/mpeg"
+        except: pass
         return None, "All TTS failed", "audio/mpeg"
     except Exception as error:
         print(f"❌ TTS ERROR: {error}")
@@ -1236,7 +1221,6 @@ def proactive_thread():
             time.sleep(30)
 
 def strip_img_token(text):
-    """Returns (clean_text, image_data) where image_data = {'type':'gallery','urls':[...]} or {'type':'single','url':...} or None"""
     if not text:
         return "", None
     text = str(text)
@@ -1320,7 +1304,7 @@ def process_command(original_text):
     if image_match:
         img_urls = generate_image(image_match.group(1).strip(), n=4)
         if img_urls:
-            final_reply = f"🎨 **4 HD images** (SDXL Flux) generate panniten macha! Tap to view!\n[[GALLERY:{'|'.join(img_urls)}]]"
+            final_reply = f"🎨 **4 HD images** generate panniten macha! Tap to view!\n[[GALLERY:{'|'.join(img_urls)}]]"
         else:
             final_reply = "Image generate panna mudiyala macha 😅"
         conversation_history[-1]["text"] = final_reply; save_history()
@@ -1406,15 +1390,14 @@ def process_command(original_text):
 
 def telegram_bot_thread():
     if not TELEGRAM_AVAILABLE:
-        print("⚠️ Telegram: python-telegram-bot not installed"); return
+        print("⚠️ Telegram: not installed"); return
     if not TELEGRAM_BOT_TOKEN:
-        print("⚠️ Telegram: TELEGRAM_BOT_TOKEN not set (optional)"); return
+        print("⚠️ Telegram: not set"); return
     try:
         async def start_cmd(update, context):
-            await update.message.reply_text("🤖 Vasanth AI online macha! FULL PC CONTROL + IMAGE + YT + WEATHER ready!")
+            await update.message.reply_text("🤖 Vasanth AI online macha!")
         async def handle_message(update, context):
             user_text = update.message.text
-            print(f"\n📱 TELEGRAM: {user_text}")
             reply = await asyncio.to_thread(process_command, user_text)
             reply, _ = strip_img_token(reply)
             await update.message.reply_text(reply[:4096])
@@ -1434,7 +1417,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Vasanth AI — Royal Aurora</title>
+<title>Vasanth AI</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0d0721">
 <link rel="icon" href="/logo.png" type="image/png">
@@ -1446,7 +1429,7 @@ HTML = r"""
   --txt:#f5f0ff; --mut:#a795c9; --glass:rgba(255,255,255,.05);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;display:flex;justify-content:center;align-items:center;padding:20px;overflow-x:hidden;}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;display:flex;justify-content:center;align-items:center;padding:20px;overflow-x:hidden;transition:background .5s;}
 .aurora{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
 .aurora i{position:absolute;width:50vw;height:50vw;border-radius:50%;filter:blur(110px);opacity:.28;animation:float 16s ease-in-out infinite;}
 .aurora i:nth-child(1){background:var(--pink);top:-15%;left:-12%;}
@@ -1458,27 +1441,32 @@ body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family
 .app{position:relative;z-index:1;width:min(1150px,100%);height:min(920px,94vh);min-height:600px;background:var(--card);border:1px solid var(--line);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 90px rgba(139,92,246,.25),0 40px 100px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(30px);}
 .header{padding:14px 22px;background:rgba(18,9,40,.5);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;}
 .brand{display:flex;align-items:center;gap:13px;min-width:0;}
-.logo-img{width:48px;height:48px;border-radius:16px;object-fit:cover;border:2px solid rgba(232,121,249,.5);box-shadow:0 0 26px rgba(232,121,249,.55),0 0 60px rgba(139,92,246,.3);flex:0 0 auto;animation:logoPulse 3s ease-in-out infinite;}
-body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95),0 0 90px rgba(236,72,153,.5);animation:logoGlow .8s ease-in-out infinite;}
+.logo-img{width:48px;height:48px;border-radius:16px;object-fit:cover;border:2px solid rgba(232,121,249,.5);box-shadow:0 0 26px rgba(232,121,249,.55);flex:0 0 auto;animation:logoPulse 3s ease-in-out infinite;}
+body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95);animation:logoGlow .8s ease-in-out infinite;}
 @keyframes logoPulse{0%,100%{box-shadow:0 0 20px rgba(232,121,249,.4);}50%{box-shadow:0 0 36px rgba(236,72,153,.7);}}
 @keyframes logoGlow{0%,100%{transform:scale(1);}50%{transform:scale(1.07);}}
-.title{font-size:19px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#f0abfc,#e879f9,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px;text-shadow:0 0 30px rgba(232,121,249,.4);}
+.title{font-size:19px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#f0abfc,#e879f9,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px;}
 .ver{font-size:9px;font-weight:700;color:#0d0721;background:linear-gradient(90deg,#f0abfc,#e879f9);padding:2px 7px;border-radius:6px;letter-spacing:1px;-webkit-text-fill-color:#0d0721;}
 .online{display:inline-flex;align-items:center;gap:6px;color:#4ade80;font-size:11px;margin-top:2px;}
 .dot{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px #22c55e;animation:pulse 1.8s infinite;}
 @keyframes pulse{50%{opacity:.4;transform:scale(.8);}}
 .mood-badge{font-size:15px;-webkit-text-fill-color:initial;}
 .settings-btn{width:42px;height:42px;border-radius:14px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:18px;cursor:pointer;transition:all .3s;display:grid;place-items:center;backdrop-filter:blur(10px);}
-.settings-btn:hover{background:rgba(232,121,249,.15);transform:rotate(90deg);box-shadow:0 0 20px rgba(232,121,249,.3);}
+.settings-btn:hover{background:rgba(232,121,249,.15);transform:rotate(90deg);}
 .settings-panel{max-height:0;overflow:hidden;transition:max-height .35s ease;background:rgba(18,9,40,.7);}
-.settings-panel.open{max-height:300px;border-bottom:1px solid var(--line);}
+.settings-panel.open{max-height:340px;border-bottom:1px solid var(--line);}
 .settings-grid{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;justify-content:center;}
 .small-btn{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 14px;border-radius:12px;cursor:pointer;font-size:12px;transition:all .2s;backdrop-filter:blur(8px);}
 .small-btn:hover{background:rgba(232,121,249,.14);transform:translateY(-1px);}
-.small-btn.active{background:rgba(232,121,249,.2);border-color:var(--pink);box-shadow:0 0 14px rgba(232,121,249,.25);}
+.small-btn.active{background:rgba(232,121,249,.2);border-color:var(--pink);}
 .small-btn.live-on{background:rgba(236,72,153,.28);border-color:var(--pink2);color:#f0abfc;}
 .voice-select{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 12px;border-radius:12px;cursor:pointer;font-size:12px;outline:none;}
 .voice-select option{background:#1e1b4b;}
+.theme-row{display:flex;align-items:center;gap:8px;padding:2px 16px 14px;justify-content:center;flex-wrap:wrap;}
+.theme-label{font-size:11px;color:var(--mut);}
+.theme-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.3);cursor:pointer;transition:transform .2s,box-shadow .2s;}
+.theme-dot:hover{transform:scale(1.15);}
+.theme-dot.active{box-shadow:0 0 0 2px var(--pink),0 0 16px var(--pink);}
 #chat{flex:1;padding:22px;overflow-y:auto;scroll-behavior:smooth;}
 .message-row{display:flex;margin:16px 0;gap:10px;align-items:flex-start;animation:messageIn .35s cubic-bezier(.2,.9,.3,1.2);}
 .message-row.user-row{justify-content:flex-end;}
@@ -1495,7 +1483,7 @@ body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95),0 0 90px rgba(
 .message .msg-text code{background:rgba(232,121,249,.14);border:1px solid rgba(232,121,249,.35);padding:1px 6px;border-radius:6px;font-family:Consolas,monospace;font-size:.9em;color:#f0abfc;}
 .message img.msg-img{max-width:260px;border-radius:14px;margin-top:8px;display:block;border:1px solid var(--line);cursor:pointer;}
 .ai{background:rgba(255,255,255,.07);border:1px solid rgba(167,139,250,.28);border-top-left-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.3);}
-.user{background:linear-gradient(135deg,var(--pink2),var(--violet));border-top-right-radius:6px;box-shadow:0 8px 30px rgba(168,85,247,.45),0 0 40px rgba(236,72,153,.25);}
+.user{background:linear-gradient(135deg,var(--pink2),var(--violet));border-top-right-radius:6px;box-shadow:0 8px 30px rgba(168,85,247,.45);}
 .meta{font-size:10px;opacity:.55;margin-top:7px;display:flex;align-items:center;gap:6px;}
 .brain-badge{display:inline-block;padding:1px 8px;border-radius:10px;background:rgba(232,121,249,.16);border:1px solid rgba(232,121,249,.38);font-size:10px;color:#f0abfc;}
 .copy-btn{cursor:pointer;opacity:.6;margin-left:auto;}
@@ -1528,18 +1516,18 @@ body.speaking #waveform{display:flex;}
 @keyframes wv{0%,100%{transform:scaleY(.25);}50%{transform:scaleY(1);}}
 .quick-actions{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .quick-btn{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:11px;cursor:pointer;transition:all .2s;backdrop-filter:blur(8px);}
-.quick-btn:hover{background:rgba(232,121,249,.16);transform:translateY(-1px);border-color:var(--pink);box-shadow:0 0 16px rgba(232,121,249,.25);}
+.quick-btn:hover{background:rgba(232,121,249,.16);transform:translateY(-1px);border-color:var(--pink);}
 .composer{display:flex;gap:8px;align-items:center;}
 input{flex:1;min-width:0;padding:14px 18px;border:1px solid var(--line);border-radius:999px;outline:none;background:rgba(13,7,33,.6);color:#fff;font-size:14px;transition:all .3s;backdrop-filter:blur(10px);}
 input:focus{border-color:rgba(232,121,249,.65);box-shadow:0 0 28px rgba(232,121,249,.2);}
 input::placeholder{color:var(--mut);}
 .action-btn{width:48px;height:48px;border:none;border-radius:16px;cursor:pointer;font-size:19px;color:white;transition:all .2s;flex:0 0 auto;}
 .action-btn:hover{transform:translateY(-2px) scale(1.05);}
-.mic{background:linear-gradient(135deg,#16a34a,#059669);box-shadow:0 4px 18px rgba(22,163,74,.4);}
-.cam{background:linear-gradient(135deg,#f59e0b,#d97706);box-shadow:0 4px 18px rgba(245,158,11,.4);}
-.scr{background:linear-gradient(135deg,var(--violet),#6d28d9);box-shadow:0 4px 18px rgba(139,92,246,.4);}
-.send{background:linear-gradient(135deg,var(--pink),var(--pink2),var(--violet));box-shadow:0 4px 26px rgba(217,70,239,.55);}
-.fab{display:none;width:48px;height:48px;border:none;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--pink2));color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 28px rgba(236,72,153,.6);transition:transform .3s;flex:0 0 auto;}
+.mic{background:linear-gradient(135deg,#16a34a,#059669);}
+.cam{background:linear-gradient(135deg,#f59e0b,#d97706);}
+.scr{background:linear-gradient(135deg,var(--violet),#6d28d9);}
+.send{background:linear-gradient(135deg,var(--pink),var(--pink2),var(--violet));}
+.fab{display:none;width:48px;height:48px;border:none;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--pink2));color:#fff;font-size:20px;cursor:pointer;transition:transform .3s;flex:0 0 auto;}
 .fab.spin{transform:rotate(45deg);}
 .footer-note{margin-top:8px;text-align:center;color:var(--mut);font-size:9px;letter-spacing:1px;}
 .sheet-backdrop{position:fixed;inset:0;background:rgba(5,2,12,.65);backdrop-filter:blur(5px);opacity:0;pointer-events:none;transition:opacity .3s;z-index:90;}
@@ -1563,6 +1551,49 @@ input::placeholder{color:var(--mut);}
 .wake-word-indicator.speaking .wake-word-orb{background:#f0abfc;}
 @keyframes orbPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.3);}}
 .wake-word-text{color:#fff;font-size:12px;font-weight:600;}
+body[data-theme="ocean"]{--bg:#03102b;--card:rgba(4,26,56,.6);--line:rgba(56,189,248,.25);--pink:#22d3ee;--violet:#3b82f6;--pink2:#2dd4bf;--blue:#60a5fa;--txt:#eaf7ff;--mut:#8fb3d1;}
+body[data-theme="ocean"] .title{background-image:linear-gradient(90deg,#a5f3fc,#22d3ee,#60a5fa);}
+body[data-theme="ocean"] .ver{background:linear-gradient(90deg,#a5f3fc,#22d3ee);}
+body[data-theme="ocean"] .logo-img{border-color:rgba(34,211,238,.55);box-shadow:0 0 26px rgba(34,211,238,.5);}
+body[data-theme="ocean"] .message .msg-text b{color:#bae6fd;}
+body[data-theme="ocean"] .avatar.user{background:linear-gradient(135deg,#0369a1,#2dd4bf);}
+body[data-theme="ocean"] .ai{border-color:rgba(59,130,246,.3);}
+body[data-theme="sunset"]{--bg:#170a12;--card:rgba(46,16,28,.6);--line:rgba(251,146,60,.28);--pink:#fb923c;--violet:#f472b6;--pink2:#f97316;--blue:#fbbf24;--txt:#fff3e8;--mut:#cfa093;}
+body[data-theme="sunset"] .title{background-image:linear-gradient(90deg,#fed7aa,#fb923c,#f472b6);}
+body[data-theme="sunset"] .ver{background:linear-gradient(90deg,#fed7aa,#fb923c);}
+body[data-theme="sunset"] .logo-img{border-color:rgba(251,146,60,.55);box-shadow:0 0 26px rgba(251,146,60,.5);}
+body[data-theme="sunset"] .message .msg-text b{color:#ffedd5;}
+body[data-theme="sunset"] .avatar.user{background:linear-gradient(135deg,#9a3412,#f472b6);}
+body[data-theme="sunset"] .ai{border-color:rgba(244,114,182,.3);}
+body[data-theme="mint"]{--bg:#041712;--card:rgba(6,40,32,.6);--line:rgba(52,211,153,.25);--pink:#34d399;--violet:#059669;--pink2:#2dd4bf;--blue:#4ade80;--txt:#eafff5;--mut:#93c2ae;}
+body[data-theme="mint"] .title{background-image:linear-gradient(90deg,#a7f3d0,#34d399,#4ade80);}
+body[data-theme="mint"] .ver{background:linear-gradient(90deg,#a7f3d0,#34d399);}
+body[data-theme="mint"] .logo-img{border-color:rgba(52,211,153,.55);box-shadow:0 0 26px rgba(52,211,153,.5);}
+body[data-theme="mint"] .message .msg-text b{color:#d1fae5;}
+body[data-theme="mint"] .avatar.user{background:linear-gradient(135deg,#065f46,#2dd4bf);}
+body[data-theme="mint"] .ai{border-color:rgba(16,185,129,.3);}
+body[data-theme="stealth"]{--bg:#0e1116;--card:rgba(20,24,32,.7);--line:rgba(59,130,246,.25);--pink:#3b82f6;--violet:#2563eb;--pink2:#06b6d4;--blue:#3b82f6;--txt:#e8ecf4;--mut:#98a2b3;}
+body[data-theme="stealth"] .title{background-image:linear-gradient(90deg,#93c5fd,#3b82f6,#06b6d4);}
+body[data-theme="stealth"] .ver{background:linear-gradient(90deg,#93c5fd,#3b82f6);}
+body[data-theme="stealth"] .logo-img{border-color:rgba(59,130,246,.55);box-shadow:0 0 26px rgba(59,130,246,.5);}
+body[data-theme="stealth"] .message .msg-text b{color:#bfdbfe;}
+body[data-theme="stealth"] .avatar.user{background:linear-gradient(135deg,#1d4ed8,#06b6d4);}
+body[data-theme="stealth"] .ai{border-color:rgba(37,99,235,.35);}
+body[data-theme="ivory"]{--bg:#eef1f8;--card:rgba(255,255,255,.85);--line:rgba(99,102,241,.25);--pink:#6366f1;--violet:#8b5cf6;--pink2:#ec4899;--blue:#06b6d4;--txt:#232a3a;--mut:#69718a;--glass:rgba(255,255,255,.7);}
+body[data-theme="ivory"] .title{background-image:linear-gradient(90deg,#4f46e5,#7c3aed,#db2777);}
+body[data-theme="ivory"] .ver{background:linear-gradient(90deg,#818cf8,#6366f1);}
+body[data-theme="ivory"] .logo-img{border-color:rgba(99,102,241,.5);box-shadow:0 0 22px rgba(99,102,241,.35);}
+body[data-theme="ivory"] .ai{background:rgba(255,255,255,.92);border-color:rgba(99,102,241,.25);box-shadow:0 8px 24px rgba(99,102,241,.12);}
+body[data-theme="ivory"] .message .msg-text b{color:#4338ca;}
+body[data-theme="ivory"] .message .msg-text code{color:#6d28d9;background:rgba(139,92,246,.08);}
+body[data-theme="ivory"] input{background:#fff;color:#232a3a;}
+body[data-theme="ivory"] .small-btn,body[data-theme="ivory"] .settings-btn,body[data-theme="ivory"] .quick-btn,body[data-theme="ivory"] .voice-select{background:#fff;color:#3a4156;}
+body[data-theme="ivory"] .voice-select option{background:#fff;}
+body[data-theme="ivory"] .sheet{background:#fdfdff;}
+body[data-theme="ivory"] .tile{background:#f2f3fa;color:#232a3a;}
+body[data-theme="ivory"] .online,body[data-theme="ivory"] .voice-status{color:#059669;}
+body[data-theme="ivory"] .avatar.user{background:linear-gradient(135deg,#4f46e5,#06b6d4);}
+body[data-theme="ivory"] .theme-dot{border-color:rgba(0,0,0,.2);}
 @media (max-width:700px){
   body{padding:0;}
   .app{width:100%;height:100vh;height:100dvh;min-height:0;border-radius:0;border:none;}
@@ -1595,7 +1626,7 @@ input::placeholder{color:var(--mut);}
         <div class="brand">
             <img src="/logo.png" alt="Vasanth AI" class="logo-img">
             <div>
-                <div class="title">VASANTH AI <span class="ver">ROYAL</span> <span class="mood-badge" id="moodBadge">😊</span></div>
+                <div class="title">VASANTH AI <span class="ver" id="verBadge">ROYAL</span> <span class="mood-badge" id="moodBadge">😊</span></div>
                 <div class="online"><span class="dot"></span><span id="onlineText">Online</span></div>
             </div>
         </div>
@@ -1614,6 +1645,15 @@ input::placeholder{color:var(--mut);}
             <button class="small-btn active" onclick="toggleWakeWord()" id="wakeBtn">🎙️ Wake: ON</button>
             <button class="small-btn" onclick="installApp()" id="installBtn" style="display:none">📲 Install</button>
             <button class="small-btn" onclick="clearChat()">🗑️ Clear</button>
+        </div>
+        <div class="theme-row">
+            <span class="theme-label">🎨 Theme:</span>
+            <button class="theme-dot active" data-theme="royal" style="background:linear-gradient(135deg,#e879f9,#8b5cf6)" onclick="applyTheme('royal','ROYAL')" title="Royal Aurora"></button>
+            <button class="theme-dot" data-theme="ocean" style="background:linear-gradient(135deg,#22d3ee,#3b82f6)" onclick="applyTheme('ocean','OCEAN')" title="Ocean Calm"></button>
+            <button class="theme-dot" data-theme="sunset" style="background:linear-gradient(135deg,#fb923c,#f472b6)" onclick="applyTheme('sunset','SUNSET')" title="Sunset Warm"></button>
+            <button class="theme-dot" data-theme="mint" style="background:linear-gradient(135deg,#34d399,#059669)" onclick="applyTheme('mint','MINT')" title="Mint Fresh"></button>
+            <button class="theme-dot" data-theme="ivory" style="background:linear-gradient(135deg,#f8fafc,#c7d2fe)" onclick="applyTheme('ivory','IVORY')" title="Ivory Light"></button>
+            <button class="theme-dot" data-theme="stealth" style="background:linear-gradient(135deg,#3b82f6,#0e1116)" onclick="applyTheme('stealth','STEALTH')" title="Stealth Dark"></button>
         </div>
     </div>
     <div id="chat"></div>
@@ -1638,7 +1678,7 @@ input::placeholder{color:var(--mut);}
             <button class="action-btn send" onclick="sendMessage()" title="Send">➤</button>
             <button class="fab" id="fabBtn" onclick="toggleSheet()" title="Quick Actions">✨</button>
         </div>
-        <div class="footer-note">VASANTH AI • ROYAL AURORA 💜 • GENIUS BRAIN + SMART MEMORY + SDXL GALLERY</div>
+        <div class="footer-note">VASANTH AI • 💎 PREMIUM EDITION</div>
     </div>
     <div class="sheet-backdrop" id="sheetBackdrop" onclick="toggleSheet(false)"></div>
     <div class="sheet" id="quickSheet">
@@ -1667,6 +1707,7 @@ input::placeholder{color:var(--mut);}
 </div>
 <script>
 const LOGO_HTML = '<img src="/logo.png" alt="AI">';
+const THEME_LABELS = {royal:"ROYAL",ocean:"OCEAN",sunset:"SUNSET",mint:"MINT",ivory:"IVORY",stealth:"STEALTH"};
 const wakeBeep = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2LkZaXmZaKi4uLioqJiIeGhYSDgoGAfn18e3p5eHd3d3Z1dXRzc29ubWxqaWhnZmVkY2NiYGBfXl1cW1taWVlZWVhYV1dWVlVVVFRUU1NSUlJRUFBQT09OTk1NTUxMTEw/Pz8+Pj49PT08PDw8Ozs7Ojo6OTo5OTk5ODg4ODc3Nzc2NjY1NTU1NDQ0NDMzMzMyMjIxMTExMDAwLy8vLi4uLS0tLCwsKysrKioqKSkoKCgnJycmJiYlJSUlJCQkIyMjIiIiISEhICAgICAgIB8fHx4eHh0dHRwcHBsbGxoaGhkZGRgYGBcXFxYWFhUUFBQTExMSEhIREREQEBAQEBAQEA8PDw4ODg0NDQwMDAsLCwoKCgkJCQgICAcHBwYGBgUFBQQEBAMDAwICAgEBAQAAAAD//wAA//8AAP//AAD//wAA");
 function playWakeBeep(){ try{ wakeBeep.currentTime=0; wakeBeep.play().catch(e=>{}); }catch(e){} }
 const MOOD_EMOJI = { happy:"😊", sad:"😢", excited:"🤩", tired:"😴", angry:"😠", neutral:"😐", curious:"🤓" };
@@ -1705,6 +1746,15 @@ function toggleVoiceOnOff(){
   fetch(voiceEnabled?"/voice/on":"/voice/off",{method:"POST"});
   setVoiceStatus(voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF (text only)");
 }
+function applyTheme(t,label){
+  document.body.setAttribute("data-theme",t);
+  localStorage.setItem("vaTheme",t);
+  document.getElementById("verBadge").textContent=label;
+  document.querySelectorAll(".theme-dot").forEach(d=>{
+    d.classList.toggle("active",d.getAttribute("data-theme")===t);
+  });
+  setVoiceStatus("🎨 Theme: "+label);
+}
 let gestureOn=false;
 function toggleGesture(){
   gestureOn=!gestureOn;
@@ -1736,6 +1786,14 @@ async function pollMood(){
 }
 pollMood();
 (function(){const b=document.getElementById("voiceOnOffBtn");if(b){b.textContent=voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";b.classList.toggle("active",voiceEnabled);}})();
+(function(){
+  const t=localStorage.getItem("vaTheme")||"royal";
+  document.body.setAttribute("data-theme",t);
+  document.getElementById("verBadge").textContent=THEME_LABELS[t]||"ROYAL";
+  document.querySelectorAll(".theme-dot").forEach(d=>{
+    d.classList.toggle("active",d.getAttribute("data-theme")===t);
+  });
+})();
 </script>
 <script>
 const cv=document.getElementById("particles"),cx=cv.getContext("2d");
@@ -1753,6 +1811,7 @@ const chat=document.getElementById("chat"),input=document.getElementById("messag
 let wakeWordEnabled=true,wakeActive=false,busy=false,wakeRecognition=null,commandRecognition=null;
 let lastPrompt="";
 const WAKE_PATTERNS=[/mach/i,/much/i,/vasan/i,/மச்சா/,/வசந்த/];
+const QUICK_PHRASES={"vanakkam":"Vanakkam macha! Enna vishayam?","hi":"Hi macha! Sollu","hello":"Hello macha!","hii":"Hi macha!","ok":"Sari macha!","thanks":"Welcome macha!","nandri":"Welcome macha!","sollu":"Sollu macha!"};
 
 let liveMode = false;
 function toggleLive(){
@@ -1814,28 +1873,28 @@ function addMessage(t,type,time=null,imgData=null,animate=false,brain=""){
         const item=document.createElement("div");item.className="gallery-item";
         const load=document.createElement("div");load.className="img-loading";load.textContent="🎨 Loading "+(i+1)+"...";
         const im=document.createElement("img");im.alt="Generated "+(i+1);im.style.display="none";
-        const base=u.split("?")[0];
-        const prompt=decodeURIComponent(base.split("/prompt/")[1]||"cute cat");
-        const provs=[
-          function(s){return base+"?width=768&height=768&seed="+s+"&nologo=true";},
-          function(s){return base+"?width=640&height=640&seed="+s+"&model=turbo&nologo=true";},
-          function(s){return "/genimg?prompt="+encodeURIComponent(prompt)+"&r="+s;},
-          function(s){return base+"?width=640&height=640&seed="+s+"&model=flux&nologo=true";}
-        ];
-        let tries=0;
+        let tries=0,lastAttempt=0;
         function setSrc(){
-          const pi=Math.min(Math.floor(tries/2),3);
-          const seed=Math.floor(Math.random()*1000000)+tries;
-          load.textContent=(pi===2?"🤗 HF ":"🎨 ")+(tries>0?"Retry "+tries:"Loading "+(i+1))+"...";
-          im.src=provs[pi](seed);
+          const sep=u.indexOf("?");
+          const base=u.slice(0,sep);
+          const params=new URLSearchParams(u.slice(sep+1));
+          params.set("seed",String(Math.floor(Math.random()*1000000)+tries));
+          im.src=base+"?"+params.toString();
         }
         im.onload=function(){im.style.display="block";if(load.parentNode)load.remove();};
         im.onerror=function(){
+          const now=Date.now();
+          if(now-lastAttempt<1500)return;
+          lastAttempt=now;
           tries++;
-          if(tries<8){setTimeout(setSrc,2500);}
-          else{load.textContent="❌ Failed — tap to retry";item.onclick=function(){load.textContent="🔄 Retrying...";tries=0;setTimeout(setSrc,300);};}
+          if(tries>=6){
+            load.textContent="❌ Failed — tap retry";
+            item.onclick=function(){load.textContent="🔄 Retrying...";tries=0;setTimeout(setSrc,300);};
+            return;
+          }
+          setTimeout(setSrc,2000+Math.random()*1000);
         };
-        setTimeout(setSrc, i*2500);
+        setTimeout(setSrc, i*1500+Math.random()*500);
         const ov=document.createElement("div");ov.className="gi-overlay";ov.innerHTML="<span>🔍</span>";
         item.appendChild(load);item.appendChild(im);item.appendChild(ov);
         item.addEventListener("click",function(){if(im.style.display==="block")openLightbox(im.src);});
@@ -1872,7 +1931,7 @@ function addThinking(){
 function removeThinking(){const o=document.querySelector(".thinking");if(o)o.parentElement.remove();}
 function setVoiceStatus(t){const s=document.getElementById("voiceStatus");if(s)s.textContent=t;}
 function showIndicator(state,text){const ind=document.getElementById("wakeIndicator");ind.className="wake-word-indicator "+state;if(text)ind.querySelector(".wake-word-text").textContent=text;}
-function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**ROYAL AURORA EDITION** 💜\n\n🎨 **SDXL Gallery** - 4 HD images per draw!\n🔍 Tap image → Full view + Download + Regenerate\n🎯 Genius Brain • 🧠 Smart Memory\n✨ Mobile-ல **✨ button** tap பண்ணு!\n\n**Try:** 'Draw a cyberpunk city' / 'Bitcoin price'","ai");}
+function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**PREMIUM EDITION** 💎\n\n🎨 **6 Themes** - Settings-ல try பண்ணு\n🖼️ **4-Image Gallery** - Draw command-ல\n🎤 **Fast Voice** - instant TTS\n📱 **Mobile Sheet** - ✨ button tap\n\n**Try:** 'Draw a cyberpunk city' / 'Bitcoin price'","ai");}
 async function loadHistory(){try{const r=await fetch("/history");if(!r.ok)throw new Error();const d=await r.json();chat.innerHTML="";if(!d.history||d.history.length===0){showWelcome();return;}d.history.forEach(i=>{
   let txt=i.text||"";
   const ex=extractImgData(txt); txt=ex[0]; const imgData=ex[1];
@@ -1896,7 +1955,11 @@ function stopSpeaking(){
   if(currentDone){const d=currentDone;currentDone=null;d();}
   else{document.body.classList.remove("speaking");setVoiceStatus("🔇 Muted");}
 }
-function playTTS(t){return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);currentAudio=a;a.onplay=()=>{setVoiceStatus("🔊 Speaking... (waveform tap = STOP)");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{currentAudio=null;currentDone=null;document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};currentDone=done;a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});}
+function playTTS(t){
+  const key=(t||"").toLowerCase().trim();
+  if(QUICK_PHRASES[key]) t=QUICK_PHRASES[key];
+  return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);currentAudio=a;a.onplay=()=>{setVoiceStatus("🔊 Speaking... (tap waveform = STOP)");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{currentAudio=null;currentDone=null;document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};currentDone=done;a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});
+}
 
 function openLightbox(url){
   const lb=document.getElementById("lightbox");
@@ -1913,12 +1976,16 @@ function regenImage(){
 
 function quickSend(t){toggleSheet(false);input.value=t;sendMessage();}
 function finishCycle(){busy=false;showIndicator("","");if(liveMode){setTimeout(startLiveListen,400);}else if(wakeWordEnabled){setTimeout(startWake,600);}}
-async function sendMessage(){const t=input.value.trim();if(!t){finishCycle();return;}busy=true;stopWake();addMessage(t,"user");if(/draw|image|generate|picture|படம்|ஓவியம்/i.test(t)){lastPrompt=t.replace(/^(draw|generate|create|make|படம்)\s+/i,"");}input.value="";addThinking();setVoiceStatus(" Thinking...");showIndicator("listening","Processing...");try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:t})});if(!r.ok)throw new Error();const d=await r.json();removeThinking();addMessage(d.reply||"...", "ai",null,d.image||null,true,d.brain||"");if(voiceEnabled){await playTTS(d.reply||"");}finishCycle();}catch(e){removeThinking();addMessage("Server error","ai");setVoiceStatus("🔴 Error");finishCycle();}}
+async function sendMessage(){const t=input.value.trim();if(!t){finishCycle();return;}busy=true;stopWake();addMessage(t,"user");if(/draw|image|generate|picture|படம்|ஓவியம்/i.test(t)){lastPrompt=t.replace(/^(draw|generate|create|make|படம்)\s+/i,"");}input.value="";addThinking();setVoiceStatus(" Thinking...");showIndicator("listening","Processing...");try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:t})});if(!r.ok)throw new Error();const d=await r.json();removeThinking();const replyText=d.reply||"...";
+let ttsPromise=null;if(voiceEnabled){ttsPromise=playTTS(replyText);}
+addMessage(replyText,"ai",null,d.image||null,true,d.brain||"");
+if(ttsPromise){await ttsPromise;}
+finishCycle();}catch(e){removeThinking();addMessage("Server error","ai");setVoiceStatus("🔴 Error");finishCycle();}}
 function pickImage(){toggleSheet(false);document.getElementById("imageInput").click();}
 async function onImagePicked(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async function(){const dataURL=reader.result;const q=input.value.trim()||"Idhula enna iruku?";busy=true;stopWake();addMessage("📷 "+q,"user",null,dataURL);input.value="";addThinking();try{const r=await fetch("/vision",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:dataURL,question:q})});const d=await r.json();removeThinking();addMessage(d.reply,"ai",null,null,true,d.brain||"");if(voiceEnabled){await playTTS(d.reply);}finishCycle();}catch(err){removeThinking();addMessage("Vision error","ai");finishCycle();}};reader.readAsDataURL(file);e.target.value="";}
 function detectWake(t){t=t.toLowerCase().trim();for(const p of WAKE_PATTERNS){const m=p.exec(t);if(m)return t.slice(m.index+m[0].length).trim();}return null;}
 function stopWake(){if(wakeRecognition){try{wakeRecognition.onend=null;wakeRecognition.onerror=null;wakeRecognition.stop();}catch(e){}wakeRecognition=null;}wakeActive=false;}
-function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "Macha"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{startCommandRecognition();}}};wakeRecognition.onerror=()=>{};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
+function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "Macha"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;console.log("🎤 wake heard:",t);const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{setVoiceStatus("🗣️ Sollu macha...");if(voiceEnabled){playTTS("Sollu macha! Enna sollanum?").then(()=>startCommandRecognition());}else{startCommandRecognition();}}}};wakeRecognition.onerror=(e)=>{console.log("wake error:",e.error);setVoiceStatus("🎤 Mic: "+e.error);};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
 function startCommandRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){finishCycle();return;}commandRecognition=new SR();commandRecognition.lang="ta-IN";commandRecognition.continuous=false;commandRecognition.interimResults=false;let got=false;commandRecognition.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};commandRecognition.onend=()=>{if(!got)finishCycle();};setTimeout(()=>{try{commandRecognition.start();}catch(e){finishCycle();}},400);}
 function toggleWakeWord(){wakeWordEnabled=!wakeWordEnabled;const b=document.getElementById("wakeBtn");if(wakeWordEnabled){b.textContent="🎙️ Wake: ON";b.classList.add("active");startWake();}else{b.textContent="🎙️ Wake: OFF";b.classList.remove("active");stopWake();busy=false;showIndicator("","");}}
 function startVoice(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){addMessage("Voice not supported","ai");return;}busy=true;stopWake();const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;setVoiceStatus("🎤 Speaking...");r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};r.onend=()=>{if(!got)finishCycle();};try{r.start();}catch(e){finishCycle();}}
@@ -2092,19 +2159,20 @@ if __name__ == "__main__":
     threading.Thread(target=telegram_bot_thread, daemon=True).start()
     threading.Thread(target=proactive_thread, daemon=True).start()
     print("\n" + "=" * 60)
-    print("    VASANTH AI - ROYAL AURORA 💜 (SDXL GALLERY EDITION)")
+    print("    VASANTH AI - PREMIUM EDITION 💎")
     print("=" * 60)
     print(f"Groq:     {'READY ✅' if GROQ_API_KEY else 'MISSING ❌'}")
     print(f"AWS:      {'READY ✅' if AWS_READY else 'Not configured'}")
     print(f"Ollama:   {'READY ✅ (OFFLINE!)' if OLLAMA_READY else 'Not running'}")
     print(f"Telegram: {'READY ✅' if (TELEGRAM_AVAILABLE and TELEGRAM_BOT_TOKEN) else 'Not configured'}")
     print(f"Gemini:   {'🥇 NATURAL VOICE READY' if GEMINI_API_KEY else 'NOT SET (fallback)'}")
+    print(f"HF Token: {'🎨 Image Backup READY' if HF_TOKEN.startswith('hf_') else 'NOT SET'}")
     print(f"Lameenc:  {'✅ MP3 encoder' if LAMEENC_READY else '❌ pip install lameenc'}")
-    print(f"Brain:    🧠 Genius Mode (step-by-step thinking)")
-    print(f"Memory:   🧠 Smart Memory (query-aware)")
-    print(f"Images:   🎨 SDXL Flux 4-image Gallery + Lightbox")
-    print(f"Voice:    🔊 ON/OFF + STOP controls")
-    print(f"Local:    🖥️ Qwen 2.5 (offline brain)")
+    print(f"Themes:   🎨 6 themes with auto title")
+    print(f"Brain:    🧠 Genius Mode")
+    print(f"Memory:   🧠 Smart Memory")
+    print(f"Images:   🎨 4-Image Gallery + Lightbox")
+    print(f"Voice:    🔊 Gemini + Google + Edge (multi-provider)")
     print("=" * 60 + "\n")
     threading.Thread(target=open_browser, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False, use_reloader=False)
