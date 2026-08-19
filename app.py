@@ -1434,7 +1434,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Vasanth AI — Royal Aurora</title>
+<title>Vasanth AI — Royal Glass Royal Edition</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#0d0721">
 <link rel="icon" href="/logo.png" type="image/png">
@@ -1581,11 +1581,225 @@ input::placeholder{color:var(--mut);}
   .footer-note{display:none;}
   .gallery-grid{max-width:100%;gap:6px;}
 }
+
+/* =========================================================
+   VASANTH AI — ROYAL GLASS 2.0 UI
+   UI-only layer: backend/API/memory/voice logic unchanged.
+   ========================================================= */
+:root{
+  --bg:#05040b;
+  --bg2:#0a0715;
+  --card:rgba(14,12,27,.48);
+  --glass:rgba(255,255,255,.065);
+  --glass2:rgba(255,255,255,.095);
+  --line:rgba(255,210,110,.28);
+  --gold:#f6d37a;
+  --gold2:#c9953f;
+  --gold3:#fff0b0;
+  --violet:#9b5cff;
+  --violet2:#d58cff;
+  --pink:#f08cff;
+  --txt:#fff8ff;
+  --mut:#bcaed2;
+}
+body{
+  background:
+    radial-gradient(circle at 12% 12%,rgba(160,80,255,.16),transparent 30%),
+    radial-gradient(circle at 88% 18%,rgba(255,195,80,.10),transparent 25%),
+    radial-gradient(circle at 70% 90%,rgba(120,50,255,.14),transparent 32%),
+    linear-gradient(135deg,#030309 0%,#0b0716 48%,#05040b 100%);
+}
+body::before{
+  content:"";
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    linear-gradient(115deg,transparent 0 44%,rgba(255,220,140,.035) 45%,transparent 46%),
+    linear-gradient(295deg,transparent 0 52%,rgba(190,120,255,.025) 53%,transparent 54%);
+}
+.app{
+  background:linear-gradient(135deg,rgba(255,255,255,.075),rgba(255,255,255,.025));
+  border:1px solid rgba(246,211,122,.26);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.035) inset,
+    0 0 80px rgba(130,65,255,.20),
+    0 0 35px rgba(246,211,122,.08),
+    0 35px 100px rgba(0,0,0,.72);
+  backdrop-filter:blur(34px) saturate(145%);
+}
+.app::before,.app::after{
+  content:"♛";
+  position:absolute; z-index:8; pointer-events:none;
+  color:rgba(246,211,122,.52);
+  font-size:17px;
+  text-shadow:0 0 16px rgba(246,211,122,.7);
+}
+.app::before{left:16px;top:12px}
+.app::after{right:16px;top:12px}
+.header{
+  background:linear-gradient(180deg,rgba(8,7,17,.72),rgba(255,255,255,.035));
+  border-bottom:1px solid rgba(246,211,122,.20);
+  box-shadow:0 1px 0 rgba(255,255,255,.035) inset,0 12px 30px rgba(0,0,0,.16);
+  backdrop-filter:blur(24px);
+}
+.logo-img{
+  border-color:rgba(246,211,122,.62);
+  box-shadow:0 0 22px rgba(246,211,122,.22),0 0 48px rgba(155,92,255,.34);
+}
+.title{
+  background:linear-gradient(90deg,#fff0b0,#f6d37a,#d58cff,#fff0b0);
+  background-size:220% auto;
+  animation:royalTitle 7s linear infinite;
+}
+@keyframes royalTitle{to{background-position:220% center}}
+.ver{
+  color:#120d1d!important;
+  background:linear-gradient(135deg,#fff0b0,#f6d37a,#c9953f)!important;
+  box-shadow:0 0 15px rgba(246,211,122,.20);
+}
+.settings-btn,.small-btn,.voice-select,.quick-btn,.lb-btn,.lb-close,.tile{
+  background:linear-gradient(145deg,rgba(255,255,255,.10),rgba(255,255,255,.035));
+  border-color:rgba(246,211,122,.20);
+  box-shadow:0 0 0 1px rgba(255,255,255,.025) inset,0 8px 24px rgba(0,0,0,.18);
+}
+.settings-btn:hover,.small-btn:hover,.quick-btn:hover,.lb-btn:hover,.tile:hover{
+  border-color:rgba(246,211,122,.58);
+  background:linear-gradient(145deg,rgba(246,211,122,.12),rgba(160,90,255,.11));
+  box-shadow:0 0 22px rgba(246,211,122,.13),0 0 26px rgba(155,92,255,.16);
+}
+.message{
+  background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));
+  border-color:rgba(246,211,122,.16);
+  box-shadow:0 10px 35px rgba(0,0,0,.30),0 0 0 1px rgba(255,255,255,.018) inset;
+}
+.ai{
+  background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(112,75,180,.075),rgba(255,255,255,.025));
+  border-color:rgba(213,140,255,.22);
+}
+.user{
+  background:linear-gradient(135deg,rgba(110,45,190,.82),rgba(215,90,215,.68));
+  border-color:rgba(246,211,122,.20);
+}
+.avatar.ai{
+  background:linear-gradient(145deg,rgba(246,211,122,.18),rgba(155,92,255,.30));
+  border:1px solid rgba(246,211,122,.30);
+}
+.bottom{
+  background:linear-gradient(180deg,rgba(5,4,12,.48),rgba(255,255,255,.045));
+  border-top:1px solid rgba(246,211,122,.20);
+  box-shadow:0 -15px 40px rgba(0,0,0,.22);
+  backdrop-filter:blur(26px) saturate(145%);
+}
+input{
+  background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.035));
+  border-color:rgba(246,211,122,.20);
+  box-shadow:0 0 0 1px rgba(255,255,255,.025) inset;
+}
+input:focus{
+  border-color:rgba(213,140,255,.65);
+  box-shadow:0 0 28px rgba(155,92,255,.24),0 0 0 1px rgba(246,211,122,.12) inset;
+}
+.send{
+  background:linear-gradient(135deg,#8b45e8,#d56eea,#f6d37a);
+  box-shadow:0 5px 30px rgba(170,80,255,.42),0 0 18px rgba(246,211,122,.15);
+}
+.mic{
+  background:linear-gradient(135deg,#169f68,#35c982);
+}
+.fab{
+  background:linear-gradient(135deg,#8b45e8,#d56eea,#f6d37a);
+}
+#waveform span{
+  background:linear-gradient(180deg,#fff0b0,#f6d37a,#d58cff,#9b5cff);
+  box-shadow:0 0 8px rgba(213,140,255,.45);
+}
+.thinking span{
+  background:#d58cff;
+  box-shadow:0 0 12px rgba(213,140,255,.8);
+}
+.footer-note{
+  color:#cdbfdd;
+}
+.sheet{
+  background:linear-gradient(145deg,rgba(25,19,42,.94),rgba(8,7,17,.92));
+  border-color:rgba(246,211,122,.25);
+  backdrop-filter:blur(30px) saturate(145%);
+}
+.sheet-handle{background:linear-gradient(90deg,#9b5cff,#f6d37a,#d58cff)}
+/* floating royal dust */
+.royal-dust{
+  position:fixed; inset:0; pointer-events:none; z-index:2; overflow:hidden;
+}
+.royal-dust i{
+  position:absolute; width:4px; height:4px; border-radius:50%;
+  background:#f6d37a; opacity:.45;
+  box-shadow:0 0 12px #f6d37a,0 0 22px rgba(213,140,255,.7);
+  animation:royalFloat 9s ease-in-out infinite;
+}
+.royal-dust i:nth-child(1){left:12%;top:22%;animation-delay:-1s}
+.royal-dust i:nth-child(2){left:24%;top:74%;animation-delay:-5s}
+.royal-dust i:nth-child(3){left:48%;top:17%;animation-delay:-3s}
+.royal-dust i:nth-child(4){left:71%;top:32%;animation-delay:-7s}
+.royal-dust i:nth-child(5){left:86%;top:78%;animation-delay:-2s}
+.royal-dust i:nth-child(6){left:58%;top:84%;animation-delay:-6s}
+@keyframes royalFloat{
+  0%,100%{transform:translate3d(0,0,0) scale(.7);opacity:.18}
+  50%{transform:translate3d(18px,-32px,0) scale(1.35);opacity:.75}
+}
+/* premium mobile bottom glass navigation */
+.mobile-nav{
+  display:none;
+}
+@media (max-width:700px){
+  body{background:
+    radial-gradient(circle at 50% -10%,rgba(155,92,255,.22),transparent 38%),
+    radial-gradient(circle at 10% 75%,rgba(246,211,122,.08),transparent 30%),
+    #05040b;
+  }
+  .app{
+    border-radius:0;
+    background:linear-gradient(160deg,rgba(18,14,30,.58),rgba(5,4,11,.68));
+  }
+  .header{padding-top:max(10px,env(safe-area-inset-top))}
+  #chat{padding-bottom:88px}
+  .bottom{
+    padding-bottom:calc(78px + env(safe-area-inset-bottom));
+  }
+  .mobile-nav{
+    position:absolute;display:grid;grid-template-columns:repeat(5,1fr);
+    left:10px;right:10px;bottom:calc(9px + env(safe-area-inset-bottom));
+    height:62px;z-index:40;padding:5px;
+    border:1px solid rgba(246,211,122,.24);border-radius:22px;
+    background:linear-gradient(145deg,rgba(255,255,255,.11),rgba(255,255,255,.035));
+    box-shadow:0 12px 38px rgba(0,0,0,.45),0 0 25px rgba(155,92,255,.18),0 0 0 1px rgba(255,255,255,.03) inset;
+    backdrop-filter:blur(28px) saturate(160%);
+  }
+  .mobile-nav button{
+    border:0;border-radius:17px;background:transparent;color:#bdb1cf;
+    font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;cursor:pointer;transition:.25s;
+  }
+  .mobile-nav button span:first-child{font-size:20px;line-height:20px}
+  .mobile-nav button.active{
+    color:#fff0b0;
+    background:linear-gradient(145deg,rgba(155,92,255,.28),rgba(246,211,122,.10));
+    box-shadow:0 0 20px rgba(155,92,255,.24),0 0 12px rgba(246,211,122,.10) inset;
+  }
+  .mobile-nav button:active{transform:scale(.92)}
+  .royal-dust i{opacity:.30}
+}
+/* accessibility / performance */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
 </style>
 </head>
 <body>
 <div class="aurora"><i></i><i></i><i></i><i></i></div>
 <canvas id="particles"></canvas>
+<div class="royal-dust" aria-hidden="true">
+  <i></i><i></i><i></i><i></i><i></i><i></i>
+</div>
 <div id="wakeIndicator" class="wake-word-indicator">
     <div class="wake-word-orb"></div>
     <span class="wake-word-text">Listening for "Macha"...</span>
@@ -1640,7 +1854,14 @@ input::placeholder{color:var(--mut);}
         </div>
         <div class="footer-note">VASANTH AI • ROYAL AURORA 💜 • GENIUS BRAIN + SMART MEMORY + SDXL GALLERY</div>
     </div>
-    <div class="sheet-backdrop" id="sheetBackdrop" onclick="toggleSheet(false)"></div>
+    <nav class="mobile-nav" aria-label="Vasanth AI navigation">
+  <button class="active" onclick="setMobileNav(this,'chat')"><span>💬</span><span>Chat</span></button>
+  <button onclick="setMobileNav(this,'history')"><span>🕘</span><span>History</span></button>
+  <button onclick="setMobileNav(this,'voice')"><span>🎙️</span><span>Voice</span></button>
+  <button onclick="setMobileNav(this,'knowledge')"><span>📖</span><span>Knowledge</span></button>
+  <button onclick="setMobileNav(this,'settings')"><span>⚙️</span><span>Settings</span></button>
+</nav>
+<div class="sheet-backdrop" id="sheetBackdrop" onclick="toggleSheet(false)"></div>
     <div class="sheet" id="quickSheet">
         <div class="sheet-handle"></div>
         <div class="sheet-title">⚡ Quick Actions</div>
@@ -1685,6 +1906,15 @@ document.addEventListener("keydown", unlockAudio);
 function toggleSettings(){
   const p=document.getElementById("settingsPanel");
   p.classList.toggle("open");
+}
+function setMobileNav(btn,tab){
+  document.querySelectorAll('.mobile-nav button').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  if(tab==='chat'){ document.getElementById('chat').scrollTop=document.getElementById('chat').scrollHeight; }
+  else if(tab==='history'){ loadHistory(); setVoiceStatus('🕘 History loaded'); }
+  else if(tab==='voice'){ startVoice(); }
+  else if(tab==='knowledge'){ quickSend('Tell me what you can do'); }
+  else if(tab==='settings'){ toggleSettings(); }
 }
 function toggleSheet(force){
   const s=document.getElementById("quickSheet");
