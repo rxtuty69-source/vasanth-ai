@@ -250,14 +250,14 @@ PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>'''
 
 PWA_SERVICE_WORKER = '''
-const CACHE = 'vasanth-ai-v23';
+const CACHE = 'vasanth-ai-v24';
 const CORE = ['/', '/manifest.json', '/logo.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/genimg','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop'].includes(url.pathname)) return;
+  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/genimg','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop','/api/stats','/api/weather'].includes(url.pathname)) return;
   e.respondWith(fetch(e.request).then((res) => { if (res.ok) { const clone = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, clone)); } return res; }).catch(() => caches.match(e.request).then((m) => m || caches.match('/'))));
 });
 '''
@@ -1039,9 +1039,8 @@ def gemini_tts(text):
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=GEMINI_API_KEY)
-        # CLEAN TEXT ONLY for TTS - no markdown, no tags
         clean = text.replace("**","").replace("*","").replace("`","")
-        clean = re.sub(r'\[\[.*?\]\]','',clean)  # Remove [[IMG:]] etc
+        clean = re.sub(r'\[\[.*?\]\]','',clean)
         clean = re.sub(r'\[.*?\]','',clean)
         clean = re.sub(r'[*_#>]','',clean)
         clean = re.sub(r'\s+',' ',clean).strip()[:1000]
@@ -1129,21 +1128,15 @@ def generate_tts(text):
         cleaned_text = clean_text_for_tts(text)
         if not cleaned_text or len(cleaned_text) < 3:
             return None, "No speakable text", "audio/mpeg"
-        
-        # ⚡ FAST PATH: Short replies (< 300 chars) → Google TTS first (instant!)
         if len(cleaned_text) < 300:
             buf = google_tts(cleaned_text)
             if buf:
                 print(f"⚡ Fast Google TTS ({len(cleaned_text)} chars)")
                 return buf, None, "audio/mpeg"
-        
-        # 🎯 LONG PATH: Gemini first (natural voice for longer text)
         result = gemini_tts(cleaned_text)
         if result:
             buf, mime = result
             return buf, None, mime
-        
-        # Fallback chain
         buf = google_tts(cleaned_text)
         if buf:
             return buf, None, "audio/mpeg"
@@ -1645,6 +1638,7 @@ body[data-theme="ivory"] .theme-dot{border-color:rgba(0,0,0,.2);}
             <button class="small-btn active" onclick="toggleWakeWord()" id="wakeBtn">🎙️ Wake: ON</button>
             <button class="small-btn" onclick="installApp()" id="installBtn" style="display:none">📲 Install</button>
             <button class="small-btn" onclick="clearChat()">🗑️ Clear</button>
+            <button class="small-btn" onclick="window.open('/jarvis','_blank')">🤖 JARVIS Mode</button>
         </div>
         <div class="theme-row">
             <span class="theme-label">🎨 Theme:</span>
@@ -1931,7 +1925,7 @@ function addThinking(){
 function removeThinking(){const o=document.querySelector(".thinking");if(o)o.parentElement.remove();}
 function setVoiceStatus(t){const s=document.getElementById("voiceStatus");if(s)s.textContent=t;}
 function showIndicator(state,text){const ind=document.getElementById("wakeIndicator");ind.className="wake-word-indicator "+state;if(text)ind.querySelector(".wake-word-text").textContent=text;}
-function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**PREMIUM EDITION** 💎\n\n🎨 **6 Themes** - Settings-ல try பண்ணு\n🖼️ **4-Image Gallery** - Draw command-ல\n🎤 **Fast Voice** - instant TTS\n📱 **Mobile Sheet** - ✨ button tap\n\n**Try:** 'Draw a cyberpunk city' / 'Bitcoin price'","ai");}
+function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**PREMIUM EDITION** 💎\n\n🎨 **6 Themes** - Settings-ல try பண்ணு\n🖼️ **4-Image Gallery** - Draw command-ல\n🎤 **Fast Voice** - instant TTS\n📱 **Mobile Sheet** - ✨ button tap\n🤖 **JARVIS Mode** - Settings-ல open பண்ணு\n\n**Try:** 'Draw a cyberpunk city' / 'Bitcoin price'","ai");}
 async function loadHistory(){try{const r=await fetch("/history");if(!r.ok)throw new Error();const d=await r.json();chat.innerHTML="";if(!d.history||d.history.length===0){showWelcome();return;}d.history.forEach(i=>{
   let txt=i.text||"";
   const ex=extractImgData(txt); txt=ex[0]; const imgData=ex[1];
@@ -1988,7 +1982,18 @@ function stopWake(){if(wakeRecognition){try{wakeRecognition.onend=null;wakeRecog
 function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "Macha"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;console.log("🎤 wake heard:",t);const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{setVoiceStatus("🗣️ Sollu macha...");if(voiceEnabled){playTTS("Sollu macha! Enna sollanum?").then(()=>startCommandRecognition());}else{startCommandRecognition();}}}};wakeRecognition.onerror=(e)=>{console.log("wake error:",e.error);setVoiceStatus("🎤 Mic: "+e.error);};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
 function startCommandRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){finishCycle();return;}commandRecognition=new SR();commandRecognition.lang="ta-IN";commandRecognition.continuous=false;commandRecognition.interimResults=false;let got=false;commandRecognition.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};commandRecognition.onend=()=>{if(!got)finishCycle();};setTimeout(()=>{try{commandRecognition.start();}catch(e){finishCycle();}},400);}
 function toggleWakeWord(){wakeWordEnabled=!wakeWordEnabled;const b=document.getElementById("wakeBtn");if(wakeWordEnabled){b.textContent="🎙️ Wake: ON";b.classList.add("active");startWake();}else{b.textContent="🎙️ Wake: OFF";b.classList.remove("active");stopWake();busy=false;showIndicator("","");}}
-function startVoice(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){addMessage("Voice not supported","ai");return;}busy=true;stopWake();const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;setVoiceStatus("🎤 Speaking...");r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};r.onend=()=>{if(!got)finishCycle();};try{r.start();}catch(e){finishCycle();}}
+function startVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){setVoiceStatus("⚠️ Chrome use பண்ணுங்க");return;}
+  if(!window.isSecureContext){setVoiceStatus("🔒 Mic localhost-ல மட்டும் தான்");return;}
+  busy=true;stopWake();
+  const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;
+  setVoiceStatus("🎤 Speaking...");
+  r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};
+  r.onerror=(e)=>{setVoiceStatus(e.error==="not-allowed"?"🚫 Mic Allow பண்ணுங்க":e.error==="no-speech"?"🤫 மறுபடி பேசு":"⚠️ Mic: "+e.error);};
+  r.onend=()=>{if(!got)finishCycle();};
+  try{r.start();}catch(e){finishCycle();}
+}
 let deferredPrompt=null;
 window.addEventListener("beforeinstallprompt",(e)=>{e.preventDefault();deferredPrompt=e;const b=document.getElementById("installBtn");if(b)b.style.display="inline-block";});
 function installApp(){if(!deferredPrompt)return;deferredPrompt.prompt();deferredPrompt.userChoice.then(r=>{if(r.outcome==="accepted")document.getElementById("installBtn").style.display="none";deferredPrompt=null;});}
@@ -2001,6 +2006,8 @@ loadHistory();setTimeout(startWake,1000);
 </body>
 </html>
 """
+
+SYSTEM_START = time.time()
 
 @app.route("/")
 def home():
@@ -2117,6 +2124,381 @@ def gesture_off():
 def gesture_status():
     return jsonify({"enabled": GESTURE_ENABLED, "last": LAST_GESTURE})
 
+@app.route("/api/stats")
+def api_stats():
+    try:
+        cpu = psutil.cpu_percent(interval=0.5)
+        ram = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        net = psutil.net_io_counters()
+        bat = psutil.sensors_battery()
+        return jsonify({
+            "cpu": cpu, "ram_pct": ram.percent,
+            "ram_used": round(ram.used/1024**3,1), "ram_total": round(ram.total/1024**3,1),
+            "disk_pct": round(disk.percent,1),
+            "net_down": round(net.bytes_recv/1024**2,1), "net_up": round(net.bytes_sent/1024**2,1),
+            "battery": bat.percent if bat else None,
+            "charging": bool(bat.power_plugged) if bat else None,
+            "uptime": int(time.time() - SYSTEM_START),
+            "messages": len(conversation_history),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/weather")
+def api_weather():
+    try:
+        r = requests.get("https://api.open-meteo.com/v1/forecast?latitude=13.0827&longitude=80.2707&current=temperature_2m,relative_humidity_2m,wind_speed_10m&hourly=precipitation_probability&forecast_days=1", timeout=10)
+        d = r.json()
+        return jsonify({
+            "temp": round(d["current"]["temperature_2m"]),
+            "hum": d["current"]["relative_humidity_2m"],
+            "wind": d["current"]["wind_speed_10m"],
+            "rain": max(d["hourly"]["precipitation_probability"]),
+        })
+    except Exception:
+        return jsonify({"temp": None, "hum": None, "wind": None, "rain": None})
+
+JARVIS_HTML = r"""
+<!DOCTYPE html>
+<html lang="ta">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>VASANTH AI — QUANTUM</title>
+<link rel="icon" href="/logo.png" type="image/png">
+<style>
+:root{--cy:#7dd3fc;--pu:#c084fc;--pu2:#a855f7;--bg:#03040c;--panel:rgba(10,12,30,.66);--line:rgba(125,211,252,.22);--txt:#e8f6ff;--mut:#8fa8c9;--grn:#4ade80;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:radial-gradient(1000px 500px at 50% -10%,rgba(168,85,247,.12),transparent),radial-gradient(800px 400px at 90% 110%,rgba(56,189,248,.08),transparent),var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;min-height:100vh;}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:rgba(3,4,12,.92);position:sticky;top:0;z-index:30;backdrop-filter:blur(12px);}
+.tlogo{display:flex;align-items:center;gap:10px;min-width:0;}
+.tlogo img{width:38px;height:38px;border-radius:50%;border:2px solid var(--pu);box-shadow:0 0 16px rgba(192,132,252,.6);flex:0 0 auto;}
+.tlogo h1{font-size:15px;letter-spacing:3px;text-shadow:0 0 20px rgba(192,132,252,.8);white-space:nowrap;}
+.tlogo small{display:block;font-size:7px;color:var(--mut);letter-spacing:2px;}
+.tright{display:flex;gap:8px;align-items:center;}
+.tclock{text-align:center;margin:0 auto;}
+.tclock b{font-size:15px;letter-spacing:1px;}
+.tclock small{display:block;font-size:9px;color:var(--mut);}
+.tchips{display:flex;gap:8px;}
+.tchip{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:5px 12px;font-size:8px;color:var(--mut);letter-spacing:1px;text-align:center;}
+.tchip b{display:block;font-size:11px;color:var(--grn);letter-spacing:1px;}
+.icobtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--cy);font-size:14px;cursor:pointer;flex:0 0 auto;}
+.icobtn:hover{box-shadow:0 0 14px rgba(125,211,252,.4);}
+.wrap{display:grid;grid-template-columns:260px 1fr 290px;gap:12px;padding:12px;max-width:1600px;margin:0 auto;align-items:start;}
+.col{display:flex;flex-direction:column;gap:12px;}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;backdrop-filter:blur(8px);}
+.panel h3{font-size:9px;letter-spacing:2px;color:var(--cy);margin-bottom:10px;}
+.ring{width:64px;height:64px;border-radius:50%;background:conic-gradient(var(--pu) var(--p,0%),rgba(192,132,252,.12) 0);display:grid;place-items:center;position:relative;flex:0 0 auto;}
+.ring::before{content:"";position:absolute;inset:6px;border-radius:50%;background:#0a0c1e;}
+.ring span{position:relative;font-size:12px;color:var(--pu);font-weight:700;}
+.bar{margin:7px 0;}
+.bar small{font-size:9px;color:var(--mut);display:flex;justify-content:space-between;}
+.bar .tr{height:4px;border-radius:2px;background:rgba(192,132,252,.12);margin-top:3px;}
+.bar .fl{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--cy),var(--pu));box-shadow:0 0 8px rgba(192,132,252,.6);}
+.row{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);padding:4px 0;border-bottom:1px dashed rgba(125,211,252,.12);}
+.row b{color:var(--txt);}
+.center{display:flex;flex-direction:column;align-items:center;padding:4px 0;}
+.ctitle{text-align:center;}
+.ctitle h2{font-size:22px;letter-spacing:6px;text-shadow:0 0 30px rgba(192,132,252,.7);}
+.ctitle small{font-size:8px;letter-spacing:3px;color:var(--mut);}
+.ctitle .on{display:inline-block;margin-top:4px;font-size:9px;color:var(--grn);letter-spacing:2px;}
+.stage{position:relative;width:100%;max-width:560px;height:380px;display:grid;place-items:center;overflow:hidden;border-radius:20px;}
+.stars{position:absolute;inset:0;pointer-events:none;}
+.stars i{position:absolute;background:#e0f2fe;border-radius:50%;opacity:.7;animation:tw 3s infinite;}
+@keyframes tw{50%{opacity:.1}}
+.rings{position:absolute;inset:0;pointer-events:none;}
+.rings i{position:absolute;left:50%;top:62%;border:1.5px solid rgba(192,132,252,.5);border-radius:50%;animation:ripple 3.2s ease-out infinite;}
+.rings i:nth-child(1){width:230px;height:58px;margin:-29px 0 0 -115px;}
+.rings i:nth-child(2){width:300px;height:76px;margin:-38px 0 0 -150px;animation-delay:.8s;border-color:rgba(125,211,252,.4);}
+.rings i:nth-child(3){width:380px;height:96px;margin:-48px 0 0 -190px;animation-delay:1.6s;border-color:rgba(192,132,252,.25);}
+@keyframes ripple{0%{opacity:.9;transform:scale(.85)}100%{opacity:0;transform:scale(1.15)}}
+.chiprow{position:absolute;top:10px;left:0;right:0;display:flex;justify-content:center;gap:8px;z-index:3;padding:0 8px;}
+.fchip{border:1px solid var(--line);background:rgba(10,12,30,.78);backdrop-filter:blur(8px);border-radius:12px;padding:7px 12px;font-size:10px;color:var(--txt);box-shadow:0 0 18px rgba(125,211,252,.12);animation:floaty 5s ease-in-out infinite;}
+.fchip small{display:block;color:var(--mut);font-size:8px;}
+.fchip.b{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;animation-delay:2s;white-space:nowrap;}
+@keyframes floaty{50%{margin-top:-6px}}
+.orb{position:relative;width:190px;height:190px;border-radius:50%;z-index:2;
+background:radial-gradient(circle at 50% 42%,rgba(240,249,255,.95),rgba(125,211,252,.55) 28%,rgba(168,85,247,.4) 58%,rgba(2,4,12,0) 78%),
+radial-gradient(circle at 32% 32%,rgba(56,189,248,.5),transparent 60%),
+radial-gradient(circle at 68% 62%,rgba(192,132,252,.55),transparent 60%);
+filter:drop-shadow(0 0 34px rgba(168,85,247,.65));animation:orbPulse 3s ease-in-out infinite;}
+.orb::before{content:"";position:absolute;inset:-10px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 40deg,rgba(125,211,252,.55) 70deg,transparent 100deg,transparent 180deg,rgba(192,132,252,.55) 230deg,transparent 270deg);filter:blur(7px);animation:swirl 6s linear infinite;}
+.orb::after{content:"";position:absolute;inset:20px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#f0f9ff 0%,#7dd3fc 32%,rgba(168,85,247,.65) 62%,transparent 78%);filter:blur(2px);animation:corePulse 2s ease-in-out infinite;}
+@keyframes swirl{to{transform:rotate(360deg)}}
+@keyframes orbPulse{50%{transform:scale(1.05)}}
+@keyframes corePulse{50%{transform:scale(1.12);filter:blur(3px)}}
+body.speaking .orb{animation-duration:.9s;filter:drop-shadow(0 0 60px rgba(192,132,252,.95));}
+body.speaking .orb::after{animation-duration:.5s;}
+.bub{position:absolute;max-width:160px;background:rgba(10,12,30,.8);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:10px;line-height:1.5;z-index:3;}
+.bub.l{left:3%;bottom:18%;}
+.bub.r{right:3%;bottom:24%;color:var(--cy);}
+.dock{display:grid;grid-template-columns:repeat(8,54px);gap:8px;justify-content:center;margin-top:12px;}
+.dbtn{width:54px;height:54px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:17px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
+.dbtn small{font-size:7px;color:var(--mut);}
+.dbtn:hover{border-color:var(--pu);box-shadow:0 0 16px rgba(192,132,252,.4);}
+.cores{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;}
+.core{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:8px 12px;display:flex;align-items:center;gap:8px;font-size:8px;color:var(--mut);letter-spacing:1px;}
+.core i{width:22px;height:22px;border-radius:50%;border:1px solid var(--pu);display:grid;place-items:center;font-size:10px;color:var(--pu);font-style:normal;}
+.core b{display:block;color:var(--grn);font-size:7px;}
+.cmdbar{display:flex;gap:8px;margin-top:14px;width:100%;max-width:620px;padding:0 10px;}
+.cmdbar input{flex:1;min-width:0;background:rgba(3,4,12,.85);border:1px solid var(--line);border-radius:999px;color:var(--txt);padding:12px 16px;font-size:12px;outline:none;}
+.cmdbar input:focus{border-color:var(--pu);box-shadow:0 0 20px rgba(192,132,252,.3);}
+.cmdbar button{width:44px;height:44px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--cy),var(--pu2));color:#012;font-size:15px;cursor:pointer;flex:0 0 auto;}
+.act{display:flex;gap:8px;align-items:center;font-size:10px;color:var(--mut);padding:6px 0;border-bottom:1px dashed rgba(125,211,252,.12);}
+.act i{font-style:normal;}
+.tgl{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--mut);padding:5px 0;}
+.tgl b{color:var(--txt);font-size:9px;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:2px 8px;}
+.qact{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.qa{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px;font-size:9px;color:var(--mut);cursor:pointer;display:flex;gap:6px;align-items:center;}
+.qa:hover{border-color:var(--pu);color:var(--txt);}
+.foot{display:flex;justify-content:space-between;gap:10px;padding:8px 16px;border-top:1px solid var(--line);font-size:8px;letter-spacing:2px;color:var(--mut);background:rgba(3,4,12,.9);flex-wrap:wrap;}
+.foot b{color:var(--pu);}
+.wave{display:flex;gap:2px;height:20px;align-items:center;}
+.wave i{width:2px;height:16px;background:var(--pu);border-radius:1px;transform:scaleY(.3);}
+body.speaking .wave i{animation:wv .8s infinite;}
+.wave i:nth-child(2){animation-delay:.1s}.wave i:nth-child(3){animation-delay:.2s}.wave i:nth-child(4){animation-delay:.3s}.wave i:nth-child(5){animation-delay:.4s}.wave i:nth-child(6){animation-delay:.5s}
+@keyframes wv{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr 1fr;}.center{grid-column:1/-1;order:-1;}}
+@media(max-width:700px){
+  .wrap{grid-template-columns:1fr;gap:10px;padding:10px;}
+  .tclock,.tchips{display:none;}
+  .top{padding:8px 10px;}
+  .tlogo img{width:34px;height:34px;}
+  .tlogo h1{font-size:13px;letter-spacing:2px;}
+  .ctitle h2{font-size:16px;letter-spacing:4px;}
+  .ctitle small{font-size:7px;}
+  .stage{height:330px;}
+  .orb{width:150px;height:150px;}
+  .rings i:nth-child(3){display:none;}
+  .rings i:nth-child(1){width:180px;height:46px;margin:-23px 0 0 -90px;}
+  .rings i:nth-child(2){width:240px;height:60px;margin:-30px 0 0 -120px;}
+  .bub{display:none;}
+  .fchip{padding:6px 10px;font-size:9px;}
+  .dock{grid-template-columns:repeat(4,1fr);width:100%;padding:0 10px;}
+  .dbtn{width:100%;height:56px;}
+  .cmdbar{position:sticky;bottom:8px;z-index:6;max-width:100%;}
+  .panel{padding:10px;}
+  .cores{gap:6px;}
+  .core{padding:6px 10px;}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="tlogo"><img src="/logo.png"><div><h1>VASANTH AI</h1><small>QUANTUM CORE • v3.0</small></div></div>
+  <div class="tclock"><b id="clock">--:--:--</b><small id="datestr">--</small></div>
+  <div class="tright">
+    <div class="tchips">
+      <div class="tchip">UPTIME<b id="uptime">--</b></div>
+      <div class="tchip">AI STATUS<b>ONLINE</b></div>
+      <div class="tchip">VOICE<b><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></span> ACTIVE</b></div>
+    </div>
+    <button class="icobtn" onclick="startMic(false)">🎤</button>
+    <button class="icobtn" onclick="location.reload()">⚙</button>
+    <button class="icobtn" onclick="location.href='/'">⏻</button>
+  </div>
+</div>
+<div class="wrap">
+  <div class="col">
+    <div class="panel">
+      <h3>SYSTEM OVERVIEW</h3>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="ring" id="cpuRing"><span id="cpuTxt">0%</span></div>
+        <div style="flex:1">
+          <div class="bar"><small><span>RAM Usage</span><span id="ramPct">--%</span></small><div class="tr"><div class="fl" id="ramBar" style="width:0%"></div></div></div>
+          <div class="bar"><small><span>Disk Usage</span><span id="diskPct">--%</span></small><div class="tr"><div class="fl" id="diskBar" style="width:0%"></div></div></div>
+          <div class="bar"><small><span>Network</span><span id="netSp">--</span></small><div class="tr"><div class="fl" style="width:60%"></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>NETWORK STATUS</h3>
+      <div class="row"><span>Download</span><b id="ndown">-- MB</b></div>
+      <div class="row"><span>Upload</span><b id="nup">-- MB</b></div>
+      <div class="row"><span>Status</span><b style="color:var(--grn)">CONNECTED</b></div>
+    </div>
+    <div class="panel">
+      <h3>WEATHER — CHENNAI</h3>
+      <div style="display:flex;gap:12px;align-items:center">
+        <div class="ring" id="wRing"><span id="wTemp">--</span></div>
+        <div><b id="wCond" style="font-size:12px">loading...</b><small style="color:var(--mut);font-size:9px">Chennai, India</small></div>
+      </div>
+      <div class="row"><span>Humidity</span><b id="wHum">--</b></div>
+      <div class="row"><span>Wind</span><b id="wWind">--</b></div>
+      <div class="row"><span>Rain</span><b id="wRain">--</b></div>
+    </div>
+    <div class="panel">
+      <h3>AI INSIGHTS</h3>
+      <div class="row"><span>Productivity</span><b style="color:var(--grn)">85%</b></div>
+      <div class="row"><span>Efficiency</span><b style="color:var(--cy)">92%</b></div>
+      <div class="row"><span>Active Time</span><b id="uptime2">--</b></div>
+    </div>
+  </div>
+  <div class="center">
+    <div class="ctitle"><h2>VASANTH AI</h2><small>YOUR PERSONAL AI ASSISTANT</small><br><span class="on">● ONLINE & ACTIVE</span></div>
+    <div class="stage">
+      <div class="stars" id="stars"></div>
+      <div class="rings"><i></i><i></i><i></i></div>
+      <div class="chiprow">
+        <div class="fchip" id="fWeather">☀ --°C<small>Humidity --%</small></div>
+        <div class="fchip" id="fStats">CPU --%<small>RAM --%</small></div>
+      </div>
+      <div class="orb"></div>
+      <div class="fchip b" id="fNet">⚡ Network: -- MB</div>
+      <div class="bub l">Hello Vasanth 👋<br>How can I help you?</div>
+      <div class="bub r">என்ன உதவி<br>செய்யலாம்?</div>
+    </div>
+    <div class="dock">
+      <button class="dbtn" onclick="location.href='/'">💬<small>Chat</small></button>
+      <button class="dbtn" onclick="startMic(false)">🎤<small>Voice</small></button>
+      <button class="dbtn" onclick="cmd('open youtube')">▶<small>YouTube</small></button>
+      <button class="dbtn" onclick="window.open('https://web.whatsapp.com')">🟢<small>WhatsApp</small></button>
+      <button class="dbtn" onclick="cmd('open chrome')">🔍<small>Google</small></button>
+      <button class="dbtn" onclick="window.open('https://mail.google.com')">✉<small>Gmail</small></button>
+      <button class="dbtn" onclick="cmd('time')">📅<small>Time</small></button>
+      <button class="dbtn" onclick="cmd('open notepad')">📝<small>Notepad</small></button>
+    </div>
+    <div class="cores">
+      <div class="core"><i>🎤</i><div>SPEECH RECOGNITION<b>● Active</b></div></div>
+      <div class="core"><i>🧠</i><div>NLP ENGINE<b>● Active</b></div></div>
+      <div class="core"><i>🤖</i><div>AUTOMATION<b>● Active</b></div></div>
+      <div class="core"><i>🔮</i><div>QUANTUM CORE<b id="memCore">--</b></div></div>
+    </div>
+    <div class="cmdbar">
+      <input id="cin" placeholder="Type your command or ask anything..." onkeydown="if(event.key==='Enter')cmd()">
+      <button onclick="cmd()">➤</button>
+      <button onclick="startMic(false)">🎤</button>
+    </div>
+  </div>
+  <div class="col">
+    <div class="panel">
+      <h3>RECENT ACTIVITY</h3>
+      <div id="acts"><div class="act"><i>✅</i>System boot complete</div></div>
+    </div>
+    <div class="panel">
+      <h3>SMART RESPONSE</h3>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:8px;font-size:10px;color:var(--cy);margin-bottom:8px">வெளியில் நிலவரம் என்ன?</div>
+      <div id="smartW" style="font-size:10px;color:var(--mut);line-height:1.7">loading...</div>
+    </div>
+    <div class="panel">
+      <h3>VOICE INPUT</h3>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="icobtn" style="width:44px;height:44px;border-radius:50%" onclick="startMic(false)">🎤</button>
+        <div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div style="text-align:center;font-size:9px;color:var(--pu);margin-top:6px" id="micState">Listening...</div>
+    </div>
+    <div class="panel">
+      <h3>SYSTEM CONTROL</h3>
+      <div style="display:flex;justify-content:center;margin-bottom:8px"><div class="ring" style="--p:50%"><span>50%</span></div></div>
+      <div class="tgl"><span>📶 Wi-Fi</span><b>Connected</b></div>
+      <div class="tgl"><span>🔵 Bluetooth</span><b>On</b></div>
+      <div class="tgl"><span>🌙 Night Mode</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
+      <div class="tgl"><span>🔕 Do Not Disturb</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
+      <div class="tgl"><span>⚡ Performance</span><b>Balanced</b></div>
+    </div>
+    <div class="panel">
+      <h3>QUICK ACTIONS</h3>
+      <div class="qact">
+        <div class="qa" onclick="cmd('lock')">🔒 Lock System</div>
+        <div class="qa" onclick="cmd('take screenshot')">📸 Screenshot</div>
+        <div class="qa" onclick="cmd('open camera')">📷 Open Camera</div>
+        <div class="qa" onclick="cmd('open calculator')">🧮 Calculator</div>
+        <div class="qa" onclick="cmd('play music')">🎵 Play Music</div>
+        <div class="qa" onclick="cmd('battery')">🔋 System Info</div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>COMMAND SHORTCUTS</h3>
+      <div class="qact">
+        <div class="qa" onclick="cmd('open chrome')">🌐 Open Chrome</div>
+        <div class="qa" onclick="window.open('https://web.whatsapp.com')">🟢 WhatsApp</div>
+        <div class="qa" onclick="cmd('shutdown')">⏻ Shutdown PC</div>
+        <div class="qa" onclick="cmd('weather')">🌦 Weather</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="foot"><span><b>VASANTH AI</b> — 100% TAMIL • தமிழ்</span><span><b>VOICE</b> | <b>AI</b> | <b>AUTOMATION</b> | <b>QUANTUM CORE</b></span></div>
+<script>
+function $(id){return document.getElementById(id);}
+let voiceEnabled = localStorage.getItem("jarvisVoice") !== "off";
+(function(){const s=$("stars");if(!s)return;for(let i=0;i<70;i++){const d=document.createElement("i");d.style.left=Math.random()*100+"%";d.style.top=Math.random()*100+"%";const sz=(Math.random()*2+1).toFixed(1);d.style.width=sz+"px";d.style.height=sz+"px";d.style.animationDelay=(Math.random()*4).toFixed(1)+"s";s.appendChild(d);}})();
+function playTTS(text){
+  if(!voiceEnabled||!text)return;
+  fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text})})
+  .then(r=>r.blob()).then(b=>{
+    if(!b.size)return;
+    const u=URL.createObjectURL(b),a=new Audio(u);
+    document.body.classList.add("speaking");
+    const off=()=>{document.body.classList.remove("speaking");URL.revokeObjectURL(u);};
+    a.onended=off;a.onerror=off;
+    a.play().catch(off);
+  }).catch(()=>{});
+}
+setInterval(()=>{const d=new Date();$("clock").textContent=d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});$("datestr").textContent=d.toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});},1000);
+function fmtUp(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h>0?h+"h "+m+"m":m+"m "+(s%60)+"s";}
+setInterval(async()=>{
+  try{
+    const r=await fetch("/api/stats");const d=await r.json();
+    $("cpuRing").style.setProperty("--p",d.cpu+"%");$("cpuTxt").textContent=Math.round(d.cpu)+"%";
+    $("ramPct").textContent=Math.round(d.ram_pct)+"%";$("ramBar").style.width=d.ram_pct+"%";
+    $("diskPct").textContent=d.disk_pct+"%";$("diskBar").style.width=d.disk_pct+"%";
+    $("netSp").textContent=d.net_down+" MB";
+    $("ndown").textContent=d.net_down+" MB";$("nup").textContent=d.net_up+" MB";
+    $("uptime").textContent=fmtUp(d.uptime);$("uptime2").textContent=fmtUp(d.uptime);
+    $("memCore").textContent="● "+d.messages+" Stored";
+    $("fStats").innerHTML="CPU "+Math.round(d.cpu)+"%<small>RAM "+Math.round(d.ram_pct)+"%</small>";
+    $("fNet").textContent="⚡ Network: "+d.net_down+" MB";
+  }catch(e){}
+},2000);
+fetch("/api/weather").then(r=>r.json()).then(d=>{
+  if(d.temp==null){$("wCond").textContent="No internet";return;}
+  $("wTemp").textContent=d.temp+"°";$("wRing").style.setProperty("--p",Math.min(d.temp*2,100)+"%");
+  $("wCond").textContent=d.temp>=30?"Hot & Humid":"Pleasant";
+  $("wHum").textContent=d.hum+"%";$("wWind").textContent=d.wind+" km/h";$("wRain").textContent=d.rain+"%";
+  $("fWeather").innerHTML="☀ "+d.temp+"°C<small>Humidity "+d.hum+"%</small>";
+  $("smartW").innerHTML="🌤 <b>"+d.temp+"°C</b> | "+(d.temp>=30?"Partly Cloudy":"Pleasant")+"<br>Humidity: "+d.hum+"% • Wind: "+d.wind+" km/h<br>Rain chance: "+d.rain+"% — "+(d.rain>=50?"குடை எடுத்து வா! ☂":"பரவாயில்லை! ☀");
+}).catch(()=>{$("wCond").textContent="Offline";});
+fetch("/history").then(r=>r.json()).then(d=>{
+  const box=$("acts");box.innerHTML="";
+  (d.history||[]).slice(-5).reverse().forEach(h=>{
+    const t=String(h.text||"");
+    const ic=t.toLowerCase().includes("youtube")?"▶":t.toLowerCase().includes("screenshot")?"📸":h.role==="user"?"👤":"🤖";
+    const div=document.createElement("div");div.className="act";
+    div.innerHTML="<i>"+ic+"</i>"+t.replace(/[<>&]/g,"").slice(0,32);
+    box.appendChild(div);
+  });
+}).catch(()=>{});
+async function cmd(t){
+  const q=t||$("cin").value.trim();if(!q)return;$("cin").value="";
+  try{
+    const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:q})});
+    const d=await r.json();
+    playTTS(String(d.reply||""));
+  }catch(e){}
+}
+function startMic(cont){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){$("micState").textContent="Chrome மட்டும் தான்";return;}
+  if(!window.isSecureContext){$("micState").textContent="localhost-ல மட்டும்";return;}
+  const r=new SR();r.lang="ta-IN";r.continuous=cont;r.interimResults=false;
+  $("micState").textContent="🎧 Listening...";
+  r.onresult=(e)=>{const t=e.results[e.results.length-1][0].transcript;cmd(t);};
+  r.onerror=(e)=>{$("micState").textContent="⚠️ "+e.error;};
+  r.onend=()=>{if(cont)startMic(true);else $("micState").textContent="Listening...";};
+  try{r.start();}catch(e){}
+}
+</script>
+</body>
+</html>
+"""
+
+@app.route("/jarvis")
+def jarvis_page():
+    return render_template_string(JARVIS_HTML)
+
 @app.route("/manifest.json")
 def pwa_manifest():
     return jsonify({
@@ -2159,7 +2541,7 @@ if __name__ == "__main__":
     threading.Thread(target=telegram_bot_thread, daemon=True).start()
     threading.Thread(target=proactive_thread, daemon=True).start()
     print("\n" + "=" * 60)
-    print("    VASANTH AI - PREMIUM EDITION 💎")
+    print("    VASANTH AI - PREMIUM EDITION 💎 (FINAL)")
     print("=" * 60)
     print(f"Groq:     {'READY ✅' if GROQ_API_KEY else 'MISSING ❌'}")
     print(f"AWS:      {'READY ✅' if AWS_READY else 'Not configured'}")
@@ -2169,6 +2551,7 @@ if __name__ == "__main__":
     print(f"HF Token: {'🎨 Image Backup READY' if HF_TOKEN.startswith('hf_') else 'NOT SET'}")
     print(f"Lameenc:  {'✅ MP3 encoder' if LAMEENC_READY else '❌ pip install lameenc'}")
     print(f"Themes:   🎨 6 themes with auto title")
+    print(f"JARVIS:   🤖 /jarvis route READY")
     print(f"Brain:    🧠 Genius Mode")
     print(f"Memory:   🧠 Smart Memory")
     print(f"Images:   🎨 4-Image Gallery + Lightbox")
