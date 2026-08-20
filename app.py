@@ -104,6 +104,14 @@ def set_brain(b):
 
 VOICE_ENABLED = True
 
+PERSONALITY = {"mode": "friend"}
+PERSONALITY_PROMPTS = {
+    "friend": "Speak in natural Tanglish like a Chennai friend. Call user 'macha'. Casual, fun, use fillers like 'Hmm...', 'Aama macha...'.",
+    "teacher": "Speak like a patient teacher. Explain step-by-step clearly in simple Tamil-English mix. Encourage learning. Respectful tone.",
+    "professional": "Speak professionally and concisely in clear English with slight Tamil touch. No slang. Structured answers with bullet points.",
+    "funny": "Speak with lots of humor, jokes and playful teasing in Tanglish. Call user 'macha'. Funny analogies. Keep it entertaining."
+}
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 SCREENSHOTS_DIR = os.path.join(DATA_DIR, "screenshots")
@@ -120,10 +128,24 @@ HISTORY_FILE = os.path.join(DATA_DIR, "conversation_history.json")
 REMINDERS_FILE = os.path.join(DATA_DIR, "reminders.json")
 MEMORY_FILE = os.path.join(DATA_DIR, "long_term_memory.json")
 MOOD_FILE = os.path.join(DATA_DIR, "current_mood.json")
+MUSIC_FILE = os.path.join(DATA_DIR, "music_state.json")
 conversation_history = []
 MAX_HISTORY_MESSAGES = 20
 
 CURRENT_MOOD = {"mood": "neutral", "intensity": 5, "timestamp": 0}
+MUSIC_STATE = {"playing": False, "title": "Nothing playing"}
+
+def load_music():
+    global MUSIC_STATE
+    try:
+        if os.path.exists(MUSIC_FILE):
+            with open(MUSIC_FILE, "r", encoding="utf-8") as f: MUSIC_STATE.update(json.load(f))
+    except: pass
+
+def save_music():
+    try:
+        with open(MUSIC_FILE, "w", encoding="utf-8") as f: json.dump(MUSIC_STATE, f, ensure_ascii=False)
+    except: pass
 
 def load_mood():
     global CURRENT_MOOD
@@ -154,7 +176,6 @@ Message: {text}"""
             if "mood" in emo and emo["mood"] in ["happy","sad","excited","tired","angry","neutral","curious"]:
                 CURRENT_MOOD = {"mood": emo["mood"], "intensity": emo.get("intensity",5), "timestamp": time.time()}
                 save_mood()
-                print(f"😺 Mood detected: {emo['mood']} ({emo.get('intensity',5)}/10)")
     except Exception as e:
         print(f"Emotion error: {e}")
 
@@ -227,7 +248,7 @@ SPECIAL ACTION RULES (use these when relevant):
 - CRYPTO PRICE: [CRYPTO: coin name]
 - TRANSLATE: [TRANSLATE: target_language|text to translate]
 - NEWS: [NEWS: category (tamil/sports/tech/cinema/world)]
-When using special actions, DO NOT write any other text outside the think tags.
+When using these special actions, DO NOT write any other text outside the think tags.
 """
 
 PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -250,14 +271,14 @@ PWA_ICON_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 </svg>'''
 
 PWA_SERVICE_WORKER = '''
-const CACHE = 'vasanth-ai-v24';
+const CACHE = 'vasanth-ai-v26';
 const CORE = ['/', '/manifest.json', '/logo.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/genimg','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop','/api/stats','/api/weather'].includes(url.pathname)) return;
+  if (['/command','/tts','/vision','/history','/clear','/change-voice','/mood','/genimg','/screenshot','/gesture/on','/gesture/off','/gesture/status','/voice/on','/voice/off','/voice/stop','/api/stats','/api/weather','/api/automation','/api/music','/api/personality'].includes(url.pathname)) return;
   e.respondWith(fetch(e.request).then((res) => { if (res.ok) { const clone = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, clone)); } return res; }).catch(() => caches.match(e.request).then((m) => m || caches.match('/'))));
 });
 '''
@@ -336,6 +357,124 @@ def save_audio_file(audio_buffer, mime, base_name):
         f.write(audio_buffer.read())
     return path
 
+AUTOMATION_FILE = os.path.join(DATA_DIR, "automation.json")
+AUTOMATION = {"morning_routine": True, "work_mode": False, "night_routine": False, "battery_saver": False, "auto_backup": False}
+
+def load_automation():
+    global AUTOMATION
+    try:
+        if os.path.exists(AUTOMATION_FILE):
+            with open(AUTOMATION_FILE, "r") as f: AUTOMATION.update(json.load(f))
+    except: pass
+
+def save_automation():
+    try:
+        with open(AUTOMATION_FILE, "w") as f: json.dump(AUTOMATION, f)
+    except: pass
+
+AUTOMATION_DONE = {"night": None, "backup": None, "battery": None}
+
+def automation_thread():
+    load_automation()
+    time.sleep(20)
+    while True:
+        try:
+            time.sleep(30)
+            now = datetime.datetime.now(); today = now.strftime("%Y-%m-%d"); h = now.hour
+            if AUTOMATION.get("night_routine") and 22 <= h <= 23 and AUTOMATION_DONE["night"] != today:
+                AUTOMATION_DONE["night"] = today
+                control_volume("volume_down")
+                if VOICE_ENABLED: proactive_speak("Macha, night 10 aachu! Screen off panni thoonguunga. Good night!")
+            if AUTOMATION.get("battery_saver") and AUTOMATION_DONE["battery"] != today:
+                bat = psutil.sensors_battery()
+                if bat and bat.percent < 20 and not bat.power_plugged:
+                    AUTOMATION_DONE["battery"] = today
+                    try:
+                        import screen_brightness_control as sbc
+                        sbc.set_brightness(40)
+                    except: pass
+                    if VOICE_ENABLED: proactive_speak("Macha, battery 20 percent ku keezha iruku! Brightness kurachiten, charger podunga!")
+            if AUTOMATION.get("auto_backup") and h == 23 and AUTOMATION_DONE["backup"] != today:
+                AUTOMATION_DONE["backup"] = today
+                try:
+                    bak = os.path.join(DATA_DIR, "backup"); os.makedirs(bak, exist_ok=True)
+                    for f in ["conversation_history.json","long_term_memory.json","reminders.json","automation.json","music_state.json"]:
+                        src = os.path.join(DATA_DIR, f)
+                        if os.path.exists(src): shutil.copy(src, os.path.join(bak, f))
+                    print("💾 Auto backup complete!")
+                except Exception as e: print(f"Backup error: {e}")
+        except Exception as e:
+            print(f"Automation error: {e}"); time.sleep(30)
+
+@app.route("/api/personality", methods=["GET","POST"])
+def api_personality():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        m = data.get("mode")
+        if m in PERSONALITY_PROMPTS:
+            PERSONALITY["mode"] = m
+            print(f"🎭 Personality: {m}")
+        return jsonify({"success": True, "mode": PERSONALITY["mode"]})
+    return jsonify(PERSONALITY)
+
+@app.route("/api/automation", methods=["GET","POST"])
+def api_automation():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        key = data.get("key"); val = data.get("value")
+        if key in AUTOMATION and val is not None:
+            AUTOMATION[key] = bool(val); save_automation()
+            print(f"🤖 Automation {key} = {AUTOMATION[key]}")
+        return jsonify({"success": True, "automation": AUTOMATION})
+    return jsonify(AUTOMATION)
+
+@app.route("/api/music", methods=["GET","POST"])
+def api_music():
+    load_music()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        act = data.get("action")
+        if act == "play":
+            q = (data.get("query") or "").strip()
+            if q:
+                webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(q))
+                MUSIC_STATE["playing"] = True
+                MUSIC_STATE["title"] = q
+            else:
+                MUSIC_STATE["playing"] = True
+        elif act == "stop":
+            MUSIC_STATE["playing"] = False
+            MUSIC_STATE["title"] = "Nothing playing"
+            control_media("media_play_pause")
+        elif act == "pause":
+            control_media("media_play_pause")
+            MUSIC_STATE["playing"] = not MUSIC_STATE.get("playing")
+        elif act == "next":
+            control_media("media_next")
+        elif act == "prev":
+            control_media("media_prev")
+        save_music()
+        return jsonify({"success": True, "music": MUSIC_STATE})
+    return jsonify(MUSIC_STATE)
+
+def screen_vision(question=""):
+    data_url, path = take_screenshot()
+    if not data_url: return "Screenshot edukka mudiyala macha 😅"
+    q = question or "Describe what is visible on the screen in Tanglish. Mention open apps/windows and suggest help."
+    if groq_client is None: return "AI key illa macha 😅"
+    messages = [{"role":"user","content":[{"type":"text","text":q},{"type":"image_url","image_url":{"url":data_url}}]}]
+    for model in ["meta-llama/llama-4-scout-17b-16e-instruct","qwen/qwen3.6-27b","openai/gpt-oss-120b"]:
+        try:
+            response = groq_client.chat.completions.create(model=model, messages=messages, max_tokens=600)
+            reply = clean_think(response.choices[0].message.content.strip())
+            set_brain("👁 Groq Vision")
+            add_to_memory("user", "[Screen Vision] " + question)
+            add_to_memory("model", reply)
+            return reply
+        except Exception as e:
+            print(f"Vision error: {e}"); continue
+    return "Screen vision work aagala macha 😅"
+
 def reminder_checker_thread():
     while True:
         time.sleep(10)
@@ -347,7 +486,6 @@ def reminder_checker_thread():
                 r["done"] = True; updated = True
                 try:
                     if not VOICE_ENABLED:
-                        print("🔇 Voice OFF — reminder silent")
                         continue
                     alert_text = f"Macha! Un reminder time aayiduchu: {r['message']}"
                     audio_buffer, error, mime = generate_tts(alert_text)
@@ -389,7 +527,7 @@ def get_memory_context(query=""):
     return ("\nLONG-TERM MEMORY:\n- " + "\n- ".join(chosen) + "\nUse these naturally when relevant.\n")
 
 def build_system(query=""):
-    return SYSTEM_PROMPT + get_memory_context(query) + get_mood_context()
+    return SYSTEM_PROMPT + get_memory_context(query) + get_mood_context() + "\nPERSONALITY MODE (" + PERSONALITY["mode"] + "): " + PERSONALITY_PROMPTS.get(PERSONALITY["mode"], PERSONALITY_PROMPTS["friend"])
 
 def extract_and_store_memories(user_text):
     try:
@@ -1181,6 +1319,7 @@ def proactive_thread():
             today = now.strftime("%Y-%m-%d")
             idle_time = time.time() - LAST_USER_ACTIVITY
             since_last = time.time() - LAST_PROACTIVE_SPEAK
+            auto = globals().get("AUTOMATION", {})
             if idle_time < 60: continue
             if since_last < 300: continue
             temp, rain = get_weather_now()
@@ -1188,7 +1327,7 @@ def proactive_thread():
                 WEATHER_ALERTED_TODAY = today
                 proactive_speak(f"Macha! Innaiku {rain}% chance mazhai varum! Umbrella edunga! 🌂")
                 continue
-            if 7 <= current_hour <= 11 and MORNING_GREETED_TODAY != today:
+            if auto.get("morning_routine", True) and 7 <= current_hour <= 11 and MORNING_GREETED_TODAY != today:
                 MORNING_GREETED_TODAY = today
                 proactive_speak(f"Good morning macha! ☀️ Ippo time {now.strftime('%I:%M %p')}. {weather_report()}")
                 continue
@@ -1196,7 +1335,7 @@ def proactive_thread():
                 EVENING_GREETED_TODAY = today
                 proactive_speak(f"Good evening macha! 🌙 Ippo time {now.strftime('%I:%M %p')}. Long day ah? Coffee sapdringala?")
                 continue
-            if 1800 <= idle_time <= 3600:
+            if 1800 <= idle_time <= 3600 and not auto.get("work_mode"):
                 import random
                 proactive_speak(random.choice([
                     "Macha, 30 minutes aachu... oru break eduthu thanni kudiyunga! 💧",
@@ -1220,10 +1359,10 @@ def strip_img_token(text):
     m = re.search(r'\[\[GALLERY:(.*?)\]\]', text)
     if m:
         urls = [u for u in m.group(1).split("|") if u]
-        return text.replace(m.group(0), "").strip(), {"type":"gallery","urls":urls}
+        return text.replace(m.group(0), "").strip(), {"type": "gallery", "urls": urls}
     m2 = re.search(r'\[\[IMG:(.*?)\]\]', text)
     if m2:
-        return text.replace(m2.group(0), "").strip(), {"type":"single","url":m2.group(1)}
+        return text.replace(m2.group(0), "").strip(), {"type": "single", "url": m2.group(1)}
     return text, None
 
 def process_command(original_text):
@@ -1250,6 +1389,30 @@ def process_command(original_text):
         data_url, info = take_screenshot()
         reply = f"Screenshot eduthuten macha! 📸 File: {info}" if data_url else f"Screenshot edukka mudiyala: {info}"
         add_to_memory("user", original_text); add_to_memory("model", reply); return reply
+    if ("screen" in text and "shot" not in text):
+        reply = screen_vision(original_text)
+        return reply
+    if text in ["mouse position","where is mouse","mouse eng"]:
+        reply = mouse_position(); add_to_memory("user", original_text); add_to_memory("model", reply); return reply
+    if ("story" in text or "kathai" in text or "கதை" in text):
+        topic = re.sub(r'(story|kathai|கதை|about|please|sollu|write|a|an|the)', '', original_text, flags=re.I).strip() or "a brave kid"
+        reply = generate_story(topic)
+        add_to_memory("user", original_text); add_to_memory("model", "📖 Story: " + topic)
+        return reply
+    if text.startswith("note:") or text.startswith("note "):
+        t = original_text.split(":",1)[-1].strip() if ":" in original_text else original_text[5:].strip()
+        d = load_notes(); d["notes"].append({"text": t, "time": time.time()}); save_notes(d)
+        return f"📝 Note save panniten macha! '{t}'"
+    if text.startswith("todo:") or text.startswith("todo "):
+        t = original_text.split(":",1)[-1].strip() if ":" in original_text else original_text[5:].strip()
+        d = load_notes(); d["todos"].append({"text": t, "done": False, "time": time.time()}); save_notes(d)
+        return f"✅ To-Do add panniten macha! '{t}'"
+    if text in ["show notes","my notes","notes","my todos"]:
+        d = load_notes()
+        if not d["notes"] and not d["todos"]: return "Notes edhuvum illa macha 📝\n\n**Try:** 'note: buy milk' / 'todo: gym at 6pm'"
+        out = "📝 **Notes:**\n" + ("\n".join([f"• {n['text']}" for n in d["notes"][-5:]]) or "—")
+        out += "\n\n✅ **To-Do:**\n" + ("\n".join([f"{'☑' if t['done'] else '☐'} {t['text']}" for t in d["todos"][-6:]]) or "—")
+        return out
     if text in ["mouse position","where is mouse","mouse eng"]:
         reply = mouse_position(); add_to_memory("user", original_text); add_to_memory("model", reply); return reply
 
@@ -1340,8 +1503,10 @@ def process_command(original_text):
     elif power_match:
         final_reply = power_control(power_match.group(1).strip().lower()); conversation_history[-1]["text"] = final_reply; save_history()
     elif play_match:
-        webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(play_match.group(1).strip()))
-        final_reply = f"YouTube-la '{play_match.group(1).strip()}' play pannuren macha 🎵"
+        q = play_match.group(1).strip()
+        webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(q))
+        MUSIC_STATE["playing"] = True; MUSIC_STATE["title"] = q; save_music()
+        final_reply = f"YouTube-la '{q}' play pannuren macha 🎵"
         conversation_history[-1]["text"] = final_reply; save_history()
     elif search_match:
         final_reply = smart_web_search(search_match.group(1).strip()); conversation_history[-1]["text"] = final_reply; save_history()
@@ -1416,11 +1581,7 @@ HTML = r"""
 <link rel="icon" href="/logo.png" type="image/png">
 <link rel="apple-touch-icon" href="/logo.png">
 <style>
-:root{
-  --bg:#0d0721; --card:rgba(28,14,58,.55); --line:rgba(232,121,249,.22);
-  --pink:#e879f9; --violet:#8b5cf6; --pink2:#ec4899; --blue:#38bdf8;
-  --txt:#f5f0ff; --mut:#a795c9; --glass:rgba(255,255,255,.05);
-}
+:root{--bg:#0d0721;--card:rgba(28,14,58,.55);--line:rgba(232,121,249,.22);--pink:#e879f9;--violet:#8b5cf6;--pink2:#ec4899;--blue:#38bdf8;--txt:#f5f0ff;--mut:#a795c9;--glass:rgba(255,255,255,.05);}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;display:flex;justify-content:center;align-items:center;padding:20px;overflow-x:hidden;transition:background .5s;}
 .aurora{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
@@ -1447,7 +1608,7 @@ body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95);animation:logo
 .settings-btn{width:42px;height:42px;border-radius:14px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:18px;cursor:pointer;transition:all .3s;display:grid;place-items:center;backdrop-filter:blur(10px);}
 .settings-btn:hover{background:rgba(232,121,249,.15);transform:rotate(90deg);}
 .settings-panel{max-height:0;overflow:hidden;transition:max-height .35s ease;background:rgba(18,9,40,.7);}
-.settings-panel.open{max-height:340px;border-bottom:1px solid var(--line);}
+.settings-panel.open{max-height:400px;border-bottom:1px solid var(--line);}
 .settings-grid{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;justify-content:center;}
 .small-btn{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 14px;border-radius:12px;cursor:pointer;font-size:12px;transition:all .2s;backdrop-filter:blur(8px);}
 .small-btn:hover{background:rgba(232,121,249,.14);transform:translateY(-1px);}
@@ -1588,22 +1749,22 @@ body[data-theme="ivory"] .online,body[data-theme="ivory"] .voice-status{color:#0
 body[data-theme="ivory"] .avatar.user{background:linear-gradient(135deg,#4f46e5,#06b6d4);}
 body[data-theme="ivory"] .theme-dot{border-color:rgba(0,0,0,.2);}
 @media (max-width:700px){
-  body{padding:0;}
-  .app{width:100%;height:100vh;height:100dvh;min-height:0;border-radius:0;border:none;}
-  .header{padding:10px 14px;}
-  .logo-img{width:40px;height:40px;border-radius:13px;}
-  .title{font-size:16px;}
-  #chat{padding:14px 12px;}
-  .message{max-width:86%;}
-  .quick-actions{display:none;}
-  .fab{display:block;}
-  .cam{display:none;}
-  .scr{display:none;}
-  .action-btn{width:44px;height:44px;border-radius:14px;}
-  input{font-size:14px;padding:13px 16px;}
-  .avatar{width:30px;height:30px;border-radius:10px;font-size:13px;}
-  .footer-note{display:none;}
-  .gallery-grid{max-width:100%;gap:6px;}
+body{padding:0;}
+.app{width:100%;height:100vh;height:100dvh;min-height:0;border-radius:0;border:none;}
+.header{padding:10px 14px;}
+.logo-img{width:40px;height:40px;border-radius:13px;}
+.title{font-size:16px;}
+#chat{padding:14px 12px;}
+.message{max-width:86%;}
+.quick-actions{display:none;}
+.fab{display:block;}
+.cam{display:none;}
+.scr{display:none;}
+.action-btn{width:44px;height:44px;border-radius:14px;}
+input{font-size:14px;padding:13px 16px;}
+.avatar{width:30px;height:30px;border-radius:10px;font-size:13px;}
+.footer-note{display:none;}
+.gallery-grid{max-width:100%;gap:6px;}
 }
 </style>
 </head>
@@ -1611,93 +1772,104 @@ body[data-theme="ivory"] .theme-dot{border-color:rgba(0,0,0,.2);}
 <div class="aurora"><i></i><i></i><i></i><i></i></div>
 <canvas id="particles"></canvas>
 <div id="wakeIndicator" class="wake-word-indicator">
-    <div class="wake-word-orb"></div>
-    <span class="wake-word-text">Listening for "Macha"...</span>
+<div class="wake-word-orb"></div>
+<span class="wake-word-text">Listening for "Macha"...</span>
 </div>
 <div class="app">
-    <div class="header">
-        <div class="brand">
-            <img src="/logo.png" alt="Vasanth AI" class="logo-img">
-            <div>
-                <div class="title">VASANTH AI <span class="ver" id="verBadge">ROYAL</span> <span class="mood-badge" id="moodBadge">😊</span></div>
-                <div class="online"><span class="dot"></span><span id="onlineText">Online</span></div>
-            </div>
-        </div>
-        <button class="settings-btn" onclick="toggleSettings()" id="settingsBtn" title="Settings">⚙️</button>
-    </div>
-    <div class="settings-panel" id="settingsPanel">
-        <div class="settings-grid">
-            <select id="voiceSelect" onchange="changeVoice()" class="voice-select" title="Select Voice">
-                <option value="pallavi">👩 Pallavi</option>
-                <option value="cute">🎀 Cute</option>
-                <option value="saranya">🌏 Saranya</option>
-            </select>
-            <button class="small-btn active" onclick="toggleVoiceOnOff()" id="voiceOnOffBtn">🔊 Voice: ON</button>
-            <button class="small-btn" onclick="toggleLive()" id="liveBtn">🎙️ Live: OFF</button>
-            <button class="small-btn" onclick="toggleGesture()" id="gestureBtn">✋ Gesture: OFF</button>
-            <button class="small-btn active" onclick="toggleWakeWord()" id="wakeBtn">🎙️ Wake: ON</button>
-            <button class="small-btn" onclick="installApp()" id="installBtn" style="display:none">📲 Install</button>
-            <button class="small-btn" onclick="clearChat()">🗑️ Clear</button>
-            <button class="small-btn" onclick="window.open('/jarvis','_blank')">🤖 JARVIS Mode</button>
-        </div>
-        <div class="theme-row">
-            <span class="theme-label">🎨 Theme:</span>
-            <button class="theme-dot active" data-theme="royal" style="background:linear-gradient(135deg,#e879f9,#8b5cf6)" onclick="applyTheme('royal','ROYAL')" title="Royal Aurora"></button>
-            <button class="theme-dot" data-theme="ocean" style="background:linear-gradient(135deg,#22d3ee,#3b82f6)" onclick="applyTheme('ocean','OCEAN')" title="Ocean Calm"></button>
-            <button class="theme-dot" data-theme="sunset" style="background:linear-gradient(135deg,#fb923c,#f472b6)" onclick="applyTheme('sunset','SUNSET')" title="Sunset Warm"></button>
-            <button class="theme-dot" data-theme="mint" style="background:linear-gradient(135deg,#34d399,#059669)" onclick="applyTheme('mint','MINT')" title="Mint Fresh"></button>
-            <button class="theme-dot" data-theme="ivory" style="background:linear-gradient(135deg,#f8fafc,#c7d2fe)" onclick="applyTheme('ivory','IVORY')" title="Ivory Light"></button>
-            <button class="theme-dot" data-theme="stealth" style="background:linear-gradient(135deg,#3b82f6,#0e1116)" onclick="applyTheme('stealth','STEALTH')" title="Stealth Dark"></button>
-        </div>
-    </div>
-    <div id="chat"></div>
-    <div class="bottom">
-        <div class="status-row">
-            <div id="voiceStatus" class="voice-status">🔊 Ready</div>
-            <div id="waveform" onclick="stopSpeaking()" title="🔇 Click to STOP voice"><span></span><span></span><span></span><span></span><span></span></div>
-        </div>
-        <div class="quick-actions">
-            <button class="quick-btn" onclick="quickSend('Draw a cute robot')">🎨 Draw</button>
-            <button class="quick-btn" onclick="quickSend('Weather enna?')">🌦️ Weather</button>
-            <button class="quick-btn" onclick="quickSend('Bitcoin price')">📈 Crypto</button>
-            <button class="quick-btn" onclick="quickSend('Translate: vanakkam to english')">🌍 Translate</button>
-            <button class="quick-btn" onclick="quickSend('Today news sollu')">📰 News</button>
-            <button class="quick-btn" onclick="quickSend('India cricket score')">🏏 Cricket</button>
-        </div>
-        <div class="composer">
-            <input id="message" type="text" placeholder="Say 'Macha' or type..." autocomplete="off">
-            <button class="action-btn scr" onclick="quickSend('Take screenshot')" title="Screenshot">📸</button>
-            <button class="action-btn cam" onclick="pickImage()" title="Photo">📷</button>
-            <button class="action-btn mic" onclick="startVoice()" title="Voice">🎤</button>
-            <button class="action-btn send" onclick="sendMessage()" title="Send">➤</button>
-            <button class="fab" id="fabBtn" onclick="toggleSheet()" title="Quick Actions">✨</button>
-        </div>
-        <div class="footer-note">VASANTH AI • 💎 PREMIUM EDITION</div>
-    </div>
-    <div class="sheet-backdrop" id="sheetBackdrop" onclick="toggleSheet(false)"></div>
-    <div class="sheet" id="quickSheet">
-        <div class="sheet-handle"></div>
-        <div class="sheet-title">⚡ Quick Actions</div>
-        <div class="sheet-grid">
-            <div class="tile" onclick="quickSend('Draw a cute robot')"><span class="ti">🎨</span><span class="tl">Draw</span></div>
-            <div class="tile" onclick="quickSend('Weather enna?')"><span class="ti">🌦️</span><span class="tl">Weather</span></div>
-            <div class="tile" onclick="quickSend('Bitcoin price')"><span class="ti">📈</span><span class="tl">Crypto</span></div>
-            <div class="tile" onclick="quickSend('Translate: vanakkam to english')"><span class="ti">🌍</span><span class="tl">Translate</span></div>
-            <div class="tile" onclick="quickSend('Today news sollu')"><span class="ti">📰</span><span class="tl">News</span></div>
-            <div class="tile" onclick="quickSend('India cricket score')"><span class="ti">🏏</span><span class="tl">Cricket</span></div>
-            <div class="tile" onclick="quickSend('Take screenshot')"><span class="ti">📸</span><span class="tl">Screenshot</span></div>
-            <div class="tile" onclick="quickSend('Good morning')"><span class="ti">🌅</span><span class="tl">Morning</span></div>
-            <div class="tile" onclick="pickImage()"><span class="ti">📷</span><span class="tl">Photo</span></div>
-        </div>
-    </div>
+<div class="header">
+<div class="brand">
+<img src="/logo.png" alt="Vasanth AI" class="logo-img">
+<div>
+<div class="title">VASANTH AI <span class="ver" id="verBadge">ROYAL</span> <span class="mood-badge" id="moodBadge">😊</span></div>
+<div class="online"><span class="dot"></span><span id="onlineText">Online</span></div>
+</div>
+</div>
+<button class="settings-btn" onclick="toggleSettings()" id="settingsBtn" title="Settings">⚙️</button>
+</div>
+<div class="settings-panel" id="settingsPanel">
+<div class="settings-grid">
+<select id="voiceSelect" onchange="changeVoice()" class="voice-select" title="Select Voice">
+<option value="pallavi">👩 Pallavi</option>
+<option value="cute">🎀 Cute</option>
+<option value="saranya">🌏 Saranya</option>
+</select>
+<button class="small-btn active" onclick="toggleVoiceOnOff()" id="voiceOnOffBtn">🔊 Voice: ON</button>
+<button class="small-btn" onclick="toggleLive()" id="liveBtn">🎙️ Live: OFF</button>
+<button class="small-btn" onclick="toggleGesture()" id="gestureBtn">✋ Gesture: OFF</button>
+<button class="small-btn active" onclick="toggleWakeWord()" id="wakeBtn">🎙️ Wake: ON</button>
+<button class="small-btn" onclick="installApp()" id="installBtn" style="display:none">📲 Install</button>
+<select id="personalitySelect" onchange="changePersonality()" class="voice-select" title="Personality Mode">
+<option value="friend">😎 Friend</option>
+<option value="teacher">🎓 Teacher</option>
+<option value="professional">💼 Professional</option>
+<option value="funny">🤣 Funny</option>
+</select>
+<button class="small-btn" onclick="setCustomWake()">🗣️ Wake Word</button>
+<button class="small-btn" onclick="clearChat()">🗑️ Clear</button>
+<button class="small-btn" onclick="window.open('/api/export')">💾 Export</button>
+<button class="small-btn" onclick="window.open('/jarvis','_blank')">🤖 JARVIS Mode</button>
+</div>
+<div class="theme-row">
+<span class="theme-label">🎨 Theme:</span>
+<button class="theme-dot active" data-theme="royal" style="background:linear-gradient(135deg,#e879f9,#8b5cf6)" onclick="applyTheme('royal','ROYAL')" title="Royal Aurora"></button>
+<button class="theme-dot" data-theme="ocean" style="background:linear-gradient(135deg,#22d3ee,#3b82f6)" onclick="applyTheme('ocean','OCEAN')" title="Ocean Calm"></button>
+<button class="theme-dot" data-theme="sunset" style="background:linear-gradient(135deg,#fb923c,#f472b6)" onclick="applyTheme('sunset','SUNSET')" title="Sunset Warm"></button>
+<button class="theme-dot" data-theme="mint" style="background:linear-gradient(135deg,#34d399,#059669)" onclick="applyTheme('mint','MINT')" title="Mint Fresh"></button>
+<button class="theme-dot" data-theme="ivory" style="background:linear-gradient(135deg,#f8fafc,#c7d2fe)" onclick="applyTheme('ivory','IVORY')" title="Ivory Light"></button>
+<button class="theme-dot" data-theme="stealth" style="background:linear-gradient(135deg,#3b82f6,#0e1116)" onclick="applyTheme('stealth','STEALTH')" title="Stealth Dark"></button>
+</div>
+</div>
+<div id="chat"></div>
+<div class="bottom">
+<div class="status-row">
+<div id="voiceStatus" class="voice-status">🔊 Ready</div>
+<div id="waveform" onclick="stopSpeaking()" title="🔇 Click to STOP voice"><span></span><span></span><span></span><span></span><span></span></div>
+</div>
+<div class="quick-actions">
+<button class="quick-btn" onclick="quickSend('Draw a cute robot')">🎨 Draw</button>
+<button class="quick-btn" onclick="quickSend('Weather enna?')">🌦️ Weather</button>
+<button class="quick-btn" onclick="quickSend('Bitcoin price')">📈 Crypto</button>
+<button class="quick-btn" onclick="quickSend('Translate: vanakkam to english')">🌍 Translate</button>
+<button class="quick-btn" onclick="quickSend('Today news sollu')">📰 News</button>
+<button class="quick-btn" onclick="quickSend('India cricket score')">🏏 Cricket</button>
+<button class="quick-btn" onclick="quickSend('Play AR Rahman songs')">🎵 Music</button>
+<button class="quick-btn" onclick="quickSend('Screen paaru')">👁 Screen</button>
+<button class="quick-btn" onclick="quickSend('Story about a brave kid')">📖 Story</button>
+</div>
+<div class="composer">
+<input id="message" type="text" placeholder="Say 'Macha' or type..." autocomplete="off">
+<button class="action-btn scr" onclick="quickSend('Take screenshot')" title="Screenshot">📸</button>
+<button class="action-btn cam" onclick="pickImage()" title="Photo">📷</button>
+<button class="action-btn mic" onclick="startVoice()" title="Voice">🎤</button>
+<button class="action-btn send" onclick="sendMessage()" title="Send">➤</button>
+<button class="fab" id="fabBtn" onclick="toggleSheet()" title="Quick Actions">✨</button>
+</div>
+<div class="footer-note">VASANTH AI • 💎 PREMIUM EDITION</div>
+</div>
+<div class="sheet-backdrop" id="sheetBackdrop" onclick="toggleSheet(false)"></div>
+<div class="sheet" id="quickSheet">
+<div class="sheet-handle"></div>
+<div class="sheet-title">⚡ Quick Actions</div>
+<div class="sheet-grid">
+<div class="tile" onclick="quickSend('Draw a cute robot')"><span class="ti">🎨</span><span class="tl">Draw</span></div>
+<div class="tile" onclick="quickSend('Weather enna?')"><span class="ti">🌦️</span><span class="tl">Weather</span></div>
+<div class="tile" onclick="quickSend('Bitcoin price')"><span class="ti">📈</span><span class="tl">Crypto</span></div>
+<div class="tile" onclick="quickSend('Translate: vanakkam to english')"><span class="ti">🌍</span><span class="tl">Translate</span></div>
+<div class="tile" onclick="quickSend('Today news sollu')"><span class="ti">📰</span><span class="tl">News</span></div>
+<div class="tile" onclick="quickSend('India cricket score')"><span class="ti">🏏</span><span class="tl">Cricket</span></div>
+<div class="tile" onclick="quickSend('Play AR Rahman songs')"><span class="ti">🎵</span><span class="tl">Music</span></div>
+<div class="tile" onclick="quickSend('Take screenshot')"><span class="ti">📸</span><span class="tl">Screenshot</span></div>
+<div class="tile" onclick="pickImage()"><span class="ti">📷</span><span class="tl">Photo</span></div>
+</div>
+</div>
 </div>
 <div class="lightbox" id="lightbox">
-    <button class="lb-close" onclick="closeLightbox()">✕</button>
-    <img id="lbImg" src="" alt="Preview">
-    <div class="lightbox-actions">
-        <a class="lb-btn" id="lbDownload" href="" target="_blank" rel="noopener">💾 Download</a>
-        <button class="lb-btn" onclick="regenImage()">🔄 Regenerate</button>
-    </div>
+<button class="lb-close" onclick="closeLightbox()">✕</button>
+<img id="lbImg" src="" alt="Preview">
+<div class="lightbox-actions">
+<a class="lb-btn" id="lbDownload" href="" target="_blank" rel="noopener">💾 Download</a>
+<button class="lb-btn" onclick="regenImage()">🔄 Regenerate</button>
+</div>
 </div>
 <script>
 const LOGO_HTML = '<img src="/logo.png" alt="AI">';
@@ -1705,88 +1877,73 @@ const THEME_LABELS = {royal:"ROYAL",ocean:"OCEAN",sunset:"SUNSET",mint:"MINT",iv
 const wakeBeep = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdH2LkZaXmZaKi4uLioqJiIeGhYSDgoGAfn18e3p5eHd3d3Z1dXRzc29ubWxqaWhnZmVkY2NiYGBfXl1cW1taWVlZWVhYV1dWVlVVVFRUU1NSUlJRUFBQT09OTk1NTUxMTEw/Pz8+Pj49PT08PDw8Ozs7Ojo6OTo5OTk5ODg4ODc3Nzc2NjY1NTU1NDQ0NDMzMzMyMjIxMTExMDAwLy8vLi4uLS0tLCwsKysrKioqKSkoKCgnJycmJiYlJSUlJCQkIyMjIiIiISEhICAgICAgIB8fHx4eHh0dHRwcHBsbGxoaGhkZGRgYGBcXFxYWFhUUFBQTExMSEhIREREQEBAQEBAQEA8PDw4ODg0NDQwMDAsLCwoKCgkJCQgICAcHBwYGBgUFBQQEBAMDAwICAgEBAQAAAAD//wAA//8AAP//AAD//wAA");
 function playWakeBeep(){ try{ wakeBeep.currentTime=0; wakeBeep.play().catch(e=>{}); }catch(e){} }
 const MOOD_EMOJI = { happy:"😊", sad:"😢", excited:"🤩", tired:"😴", angry:"😠", neutral:"😐", curious:"🤓" };
-
 function unlockAudio(){
-  try{
-    const a = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
-    a.play().catch(()=>{});
-  }catch(e){}
-  document.removeEventListener("click", unlockAudio);
-  document.removeEventListener("keydown", unlockAudio);
+try{
+const a = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==");
+a.play().catch(()=>{});
+}catch(e){}
+document.removeEventListener("click", unlockAudio);
+document.removeEventListener("keydown", unlockAudio);
 }
 document.addEventListener("click", unlockAudio);
 document.addEventListener("keydown", unlockAudio);
-
-function toggleSettings(){
-  const p=document.getElementById("settingsPanel");
-  p.classList.toggle("open");
-}
+function toggleSettings(){ document.getElementById("settingsPanel").classList.toggle("open"); }
 function toggleSheet(force){
-  const s=document.getElementById("quickSheet");
-  const b=document.getElementById("sheetBackdrop");
-  const f=document.getElementById("fabBtn");
-  const open=(force===undefined)?!s.classList.contains("open"):force;
-  s.classList.toggle("open",open);
-  b.classList.toggle("show",open);
-  if(f)f.classList.toggle("spin",open);
+const s=document.getElementById("quickSheet"), b=document.getElementById("sheetBackdrop"), f=document.getElementById("fabBtn");
+const open=(force===undefined)?!s.classList.contains("open"):force;
+s.classList.toggle("open",open); b.classList.toggle("show",open);
+if(f)f.classList.toggle("spin",open);
 }
 let voiceEnabled = localStorage.getItem("voiceEnabled") !== "off";
 function toggleVoiceOnOff(){
-  voiceEnabled=!voiceEnabled;
-  localStorage.setItem("voiceEnabled", voiceEnabled?"on":"off");
-  const b=document.getElementById("voiceOnOffBtn");
-  b.textContent = voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";
-  b.classList.toggle("active",voiceEnabled);
-  fetch(voiceEnabled?"/voice/on":"/voice/off",{method:"POST"});
-  setVoiceStatus(voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF (text only)");
+voiceEnabled=!voiceEnabled;
+localStorage.setItem("voiceEnabled", voiceEnabled?"on":"off");
+const b=document.getElementById("voiceOnOffBtn");
+b.textContent = voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";
+b.classList.toggle("active",voiceEnabled);
+fetch(voiceEnabled?"/voice/on":"/voice/off",{method:"POST"});
+setVoiceStatus(voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF (text only)");
 }
 function applyTheme(t,label){
-  document.body.setAttribute("data-theme",t);
-  localStorage.setItem("vaTheme",t);
-  document.getElementById("verBadge").textContent=label;
-  document.querySelectorAll(".theme-dot").forEach(d=>{
-    d.classList.toggle("active",d.getAttribute("data-theme")===t);
-  });
-  setVoiceStatus("🎨 Theme: "+label);
+document.body.setAttribute("data-theme",t);
+localStorage.setItem("vaTheme",t);
+document.getElementById("verBadge").textContent=label;
+document.querySelectorAll(".theme-dot").forEach(d=>{ d.classList.toggle("active",d.getAttribute("data-theme")===t); });
+setVoiceStatus("🎨 Theme: "+label);
 }
 let gestureOn=false;
 function toggleGesture(){
-  gestureOn=!gestureOn;
-  fetch(gestureOn?"/gesture/on":"/gesture/off",{method:"POST"});
-  const b=document.getElementById("gestureBtn");
-  b.textContent = gestureOn?"✋ Gesture: ON":"✋ Gesture: OFF";
-  b.classList.toggle("active",gestureOn);
-  setVoiceStatus(gestureOn?"✋ Gesture ON - camera watch pannudhu!":"🔊 Ready");
+gestureOn=!gestureOn;
+fetch(gestureOn?"/gesture/on":"/gesture/off",{method:"POST"});
+const b=document.getElementById("gestureBtn");
+b.textContent = gestureOn?"✋ Gesture: ON":"✋ Gesture: OFF";
+b.classList.toggle("active",gestureOn);
+setVoiceStatus(gestureOn?"✋ Gesture ON - camera watch pannudhu!":"🔊 Ready");
 }
 setInterval(async()=>{
-  try{
-    const r=await fetch("/gesture/status"); const d=await r.json();
-    if(d.enabled && d.last && (Date.now()/1000 - d.last.timestamp)<2){
-      setVoiceStatus("✋ Gesture: "+d.last.gesture);
-    }
-  }catch(e){}
+try{
+const r=await fetch("/gesture/status"); const d=await r.json();
+if(d.enabled && d.last && (Date.now()/1000 - d.last.timestamp)<2){ setVoiceStatus("✋ Gesture: "+d.last.gesture); }
+}catch(e){}
 },1000);
-
 async function pollMood(){
-  try{
-    const r = await fetch("/mood"); const d = await r.json();
-    if(d && d.mood){
-      const badge = document.getElementById("moodBadge");
-      badge.textContent = MOOD_EMOJI[d.mood] || "😐";
-      badge.title = (d.mood || "neutral") + " (" + (d.intensity || 5) + "/10)";
-    }
-  }catch(e){}
-  setTimeout(pollMood, 5000);
+try{
+const r = await fetch("/mood"); const d = await r.json();
+if(d && d.mood){
+const badge = document.getElementById("moodBadge");
+badge.textContent = MOOD_EMOJI[d.mood] || "😐";
+badge.title = (d.mood || "neutral") + " (" + (d.intensity || 5) + "/10)";
+}
+}catch(e){}
+setTimeout(pollMood, 5000);
 }
 pollMood();
 (function(){const b=document.getElementById("voiceOnOffBtn");if(b){b.textContent=voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";b.classList.toggle("active",voiceEnabled);}})();
 (function(){
-  const t=localStorage.getItem("vaTheme")||"royal";
-  document.body.setAttribute("data-theme",t);
-  document.getElementById("verBadge").textContent=THEME_LABELS[t]||"ROYAL";
-  document.querySelectorAll(".theme-dot").forEach(d=>{
-    d.classList.toggle("active",d.getAttribute("data-theme")===t);
-  });
+const t=localStorage.getItem("vaTheme")||"royal";
+document.body.setAttribute("data-theme",t);
+document.getElementById("verBadge").textContent=THEME_LABELS[t]||"ROYAL";
+document.querySelectorAll(".theme-dot").forEach(d=>{ d.classList.toggle("active",d.getAttribute("data-theme")===t); });
 })();
 </script>
 <script>
@@ -1800,174 +1957,175 @@ for(const p of P){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>cv.width)p.vx*=-1;if(p.y<0||
 for(let i=0;i<P.length;i++)for(let j=i+1;j<P.length;j++){const dx=P[i].x-P[j].x,dy=P[i].y-P[j].y,d=dx*dx+dy*dy;if(d<13000){cx.strokeStyle="rgba(167,139,250,"+(0.14*(1-d/13000))+")";cx.beginPath();cx.moveTo(P[i].x,P[i].y);cx.lineTo(P[j].x,P[j].y);cx.stroke();}}
 requestAnimationFrame(drawP);}
 drawP();
-
 const chat=document.getElementById("chat"),input=document.getElementById("message");
 let wakeWordEnabled=true,wakeActive=false,busy=false,wakeRecognition=null,commandRecognition=null;
 let lastPrompt="";
-const WAKE_PATTERNS=[/mach/i,/much/i,/vasan/i,/மச்சா/,/வசந்த/];
+let customWake=localStorage.getItem("customWake")||"";
+function buildWakePatterns(){const p=[/mach/i,/much/i,/vasan/i,/மச்சா/,/வசந்த/];if(customWake){const w=customWake.toLowerCase().replace(/[^a-z0-9஀-௿ ]/gi,"").trim();if(w)p.unshift(new RegExp(w.replace(/\s+/g,"\\s+"),"i"));}return p;}
+let WAKE_PATTERNS=buildWakePatterns();
+function setCustomWake(){const v=prompt("🗣️ New wake word sollu (empty = 'Macha'):",customWake||"");if(v===null)return;customWake=v.trim();localStorage.setItem("customWake",customWake);WAKE_PATTERNS=buildWakePatterns();setVoiceStatus("🗣️ Wake word: "+(customWake||"Macha"));const wt=document.querySelector(".wake-word-text");if(wt)wt.textContent='Listening "'+(customWake||"Macha")+'"...';}
+function changePersonality(){const m=document.getElementById("personalitySelect").value;fetch("/api/personality",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:m})});setVoiceStatus("🎭 Mode: "+m);}
+fetch("/api/personality").then(r=>r.json()).then(d=>{const s=document.getElementById("personalitySelect");if(s)s.value=d.mode||"friend";}).catch(()=>{});
 const QUICK_PHRASES={"vanakkam":"Vanakkam macha! Enna vishayam?","hi":"Hi macha! Sollu","hello":"Hello macha!","hii":"Hi macha!","ok":"Sari macha!","thanks":"Welcome macha!","nandri":"Welcome macha!","sollu":"Sollu macha!"};
-
 let liveMode = false;
 function toggleLive(){
-  liveMode = !liveMode;
-  const b = document.getElementById("liveBtn");
-  if(liveMode){ b.textContent="🔴 Live: ON"; b.classList.add("live-on"); b.classList.add("active"); setVoiceStatus("🎙️ Live Chat ON - pesunga macha!"); startLiveListen(); }
-  else { b.textContent="🎙️ Live: OFF"; b.classList.remove("live-on"); b.classList.remove("active"); setVoiceStatus("🔊 Ready"); showIndicator("",""); }
+liveMode = !liveMode;
+const b = document.getElementById("liveBtn");
+if(liveMode){ b.textContent="🔴 Live: ON"; b.classList.add("live-on"); b.classList.add("active"); setVoiceStatus("🎙️ Live Chat ON - pesunga macha!"); startLiveListen(); }
+else { b.textContent="🎙️ Live: OFF"; b.classList.remove("live-on"); b.classList.remove("active"); setVoiceStatus("🔊 Ready"); showIndicator("",""); }
 }
 function startLiveListen(){
-  if(!liveMode || busy) return;
-  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR) return;
-  const r = new SR(); r.lang="ta-IN"; r.continuous=false; r.interimResults=false;
-  let got=false;
-  setVoiceStatus("🎧 Kekuren... pesunga!"); showIndicator("listening","Listening...");
-  r.onresult=(e)=>{ got=true; input.value=e.results[0][0].transcript; sendMessage(); };
-  r.onend=()=>{ if(!got && liveMode) setTimeout(startLiveListen,500); };
-  r.onerror=()=>{ if(liveMode) setTimeout(startLiveListen,800); };
-  try{ r.start(); }catch(e){}
+if(!liveMode || busy) return;
+const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR) return;
+const r = new SR(); r.lang="ta-IN"; r.continuous=false; r.interimResults=false;
+let got=false;
+setVoiceStatus("🎧 Kekuren... pesunga!"); showIndicator("listening","Listening...");
+r.onresult=(e)=>{ got=true; input.value=e.results[0][0].transcript; sendMessage(); };
+r.onend=()=>{ if(!got && liveMode) setTimeout(startLiveListen,500); };
+r.onerror=()=>{ if(liveMode) setTimeout(startLiveListen,800); };
+try{ r.start(); }catch(e){}
 }
-
 function escapeTime(){return new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});}
 function formatText(t){
-  let s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  s=s.replace(/\*\*(.*?)\*\*/g,"<b>$1</b>");
-  s=s.replace(/`(.*?)`/g,"<code>$1</code>");
-  return s;
+let s=t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+s=s.replace(/\*\*(.*?)\*\*/g,"<b>$1</b>");
+s=s.replace(/`(.*?)`/g,"<code>$1</code>");
+return s;
 }
 function typewriter(el,text,done){
-  let i=0; const speed=text.length>400?4:14; el.textContent="";
-  (function step(){
-    if(i<text.length){ el.textContent+=text[i]; i++; chat.scrollTop=chat.scrollHeight; setTimeout(step,speed); }
-    else if(done){ done(); }
-  })();
+let i=0; const speed=text.length>400?4:14; el.textContent="";
+(function step(){
+if(i<text.length){ el.textContent+=text[i]; i++; chat.scrollTop=chat.scrollHeight; setTimeout(step,speed); }
+else if(done){ done(); }
+})();
 }
 function extractImgData(t){
-  let imgData=null;
-  const g=t.match(/\[\[GALLERY:(.*?)\]\]/);
-  if(g){imgData={type:"gallery",urls:g[1].split("|").filter(u=>u)};t=t.replace(g[0],"").trim();return [t,imgData];}
-  const s=t.match(/\[\[IMG:(.*?)\]\]/);
-  if(s){imgData={type:"single",url:s[1]};t=t.replace(s[0],"").trim();}
-  return [t,imgData];
+let imgData=null;
+const g=t.match(/\[\[GALLERY:(.*?)\]\]/);
+if(g){imgData={type:"gallery",urls:g[1].split("|").filter(u=>u)};t=t.replace(g[0],"").trim();return [t,imgData];}
+const s=t.match(/\[\[IMG:(.*?)\]\]/);
+if(s){imgData={type:"single",url:s[1]};t=t.replace(s[0],"").trim();}
+return [t,imgData];
 }
 function addMessage(t,type,time=null,imgData=null,animate=false,brain=""){
-  const r=document.createElement("div");
-  r.className="message-row "+(type==="user"?"user-row":type==="proactive"?"proactive-row":"ai-row");
-  let av=null;
-  if(type !== "proactive"){
-    av=document.createElement("div");
-    av.className="avatar "+(type==="user"?"user":"ai");
-    if(type==="user"){ av.textContent="👤"; } else { av.innerHTML=LOGO_HTML; }
-  }
-  const b=document.createElement("div");
-  b.className="message "+(type==="proactive"?"ai":type);
-  if(imgData){
-    if(imgData.type==="gallery" && imgData.urls && imgData.urls.length){
-      const grid=document.createElement("div");grid.className="gallery-grid";
-      imgData.urls.forEach(function(u,i){
-        const item=document.createElement("div");item.className="gallery-item";
-        const load=document.createElement("div");load.className="img-loading";load.textContent="🎨 Loading "+(i+1)+"...";
-        const im=document.createElement("img");im.alt="Generated "+(i+1);im.style.display="none";
-        let tries=0,lastAttempt=0;
-        function setSrc(){
-          const sep=u.indexOf("?");
-          const base=u.slice(0,sep);
-          const params=new URLSearchParams(u.slice(sep+1));
-          params.set("seed",String(Math.floor(Math.random()*1000000)+tries));
-          im.src=base+"?"+params.toString();
-        }
-        im.onload=function(){im.style.display="block";if(load.parentNode)load.remove();};
-        im.onerror=function(){
-          const now=Date.now();
-          if(now-lastAttempt<1500)return;
-          lastAttempt=now;
-          tries++;
-          if(tries>=6){
-            load.textContent="❌ Failed — tap retry";
-            item.onclick=function(){load.textContent="🔄 Retrying...";tries=0;setTimeout(setSrc,300);};
-            return;
-          }
-          setTimeout(setSrc,2000+Math.random()*1000);
-        };
-        setTimeout(setSrc, i*1500+Math.random()*500);
-        const ov=document.createElement("div");ov.className="gi-overlay";ov.innerHTML="<span>🔍</span>";
-        item.appendChild(load);item.appendChild(im);item.appendChild(ov);
-        item.addEventListener("click",function(){if(im.style.display==="block")openLightbox(im.src);});
-        grid.appendChild(item);
-      });
-      b.appendChild(grid);
-    } else if(imgData.type==="single" && imgData.url){
-      const im=document.createElement("img");im.src=imgData.url;im.className="msg-img";im.onclick=function(){openLightbox(imgData.url);};b.appendChild(im);
-    }
-  }
-  const txt=document.createElement("div"); txt.className="msg-text"; b.appendChild(txt);
-  const m=document.createElement("div");m.className="meta";
-  let meta=type==="user"?"You":type==="proactive"?"🔮 Proactive":"Vasanth AI";
-  if(brain) meta+=` <span class="brain-badge">${brain}</span>`;
-  meta+=" • "+(time||escapeTime());
-  if(type==="ai") meta+=` <span class="copy-btn" title="Copy">⧉</span>`;
-  m.innerHTML=meta; b.appendChild(m);
-  if(type==="user"){ r.appendChild(b); if(av) r.appendChild(av); }
-  else { if(av) r.appendChild(av); r.appendChild(b); }
-  chat.appendChild(r); chat.scrollTop=chat.scrollHeight;
-  const cp=m.querySelector(".copy-btn");
-  if(cp){ cp.onclick=()=>{ navigator.clipboard.writeText(t); cp.textContent="✅"; setTimeout(()=>cp.textContent="⧉",1200); }; }
-  if(animate && (type==="ai"||type==="proactive")){ typewriter(txt,t,()=>{ txt.innerHTML=formatText(t); }); }
-  else { txt.innerHTML=formatText(t); }
+const r=document.createElement("div");
+r.className="message-row "+(type==="user"?"user-row":type==="proactive"?"proactive-row":"ai-row");
+let av=null;
+if(type !== "proactive"){
+av=document.createElement("div");
+av.className="avatar "+(type==="user"?"user":"ai");
+if(type==="user"){ av.textContent="👤"; } else { av.innerHTML=LOGO_HTML; }
+}
+const b=document.createElement("div");
+b.className="message "+(type==="proactive"?"ai":type);
+if(imgData){
+if(imgData.type==="gallery" && imgData.urls && imgData.urls.length){
+const grid=document.createElement("div");grid.className="gallery-grid";
+imgData.urls.forEach(function(u,i){
+const item=document.createElement("div");item.className="gallery-item";
+const load=document.createElement("div");load.className="img-loading";load.textContent="🎨 Loading "+(i+1)+"...";
+const im=document.createElement("img");im.alt="Generated "+(i+1);im.style.display="none";
+let tries=0,lastAttempt=0;
+function setSrc(){
+const sep=u.indexOf("?");
+const base=u.slice(0,sep);
+const params=new URLSearchParams(u.slice(sep+1));
+params.set("seed",String(Math.floor(Math.random()*1000000)+tries));
+im.src=base+"?"+params.toString();
+}
+im.onload=function(){im.style.display="block";if(load.parentNode)load.remove();};
+im.onerror=function(){
+const now=Date.now();
+if(now-lastAttempt<1500)return;
+lastAttempt=now; tries++;
+if(tries>=6){ load.textContent="❌ Failed — tap retry"; item.onclick=function(){load.textContent="🔄 Retrying...";tries=0;setTimeout(setSrc,300);}; return; }
+setTimeout(setSrc,2000+Math.random()*1000);
+};
+setTimeout(setSrc, i*1500+Math.random()*500);
+const ov=document.createElement("div");ov.className="gi-overlay";ov.innerHTML="<span>🔍</span>";
+item.appendChild(load);item.appendChild(im);item.appendChild(ov);
+item.addEventListener("click",function(){if(im.style.display==="block")openLightbox(im.src);});
+grid.appendChild(item);
+});
+b.appendChild(grid);
+} else if(imgData.type==="single" && imgData.url){
+const im=document.createElement("img");im.src=imgData.url;im.className="msg-img";im.onclick=function(){openLightbox(imgData.url);};b.appendChild(im);
+} else if(imgData.type==="story" && imgData.scenes){
+const wrap=document.createElement("div");
+imgData.scenes.forEach(function(s){
+const im=document.createElement("img");im.src=s.url;im.className="msg-img";im.style.maxWidth="100%";im.style.cursor="pointer";im.onclick=function(){openLightbox(s.url);};wrap.appendChild(im);
+const p=document.createElement("div");p.style.margin="8px 0 12px";p.style.lineHeight="1.6";p.textContent=s.text;wrap.appendChild(p);
+});
+b.appendChild(wrap);
+}
+}
+const txt=document.createElement("div"); txt.className="msg-text"; b.appendChild(txt);
+const m=document.createElement("div");m.className="meta";
+let meta=type==="user"?"You":type==="proactive"?"🔮 Proactive":"Vasanth AI";
+if(brain) meta+=` <span class="brain-badge">${brain}</span>`;
+meta+=" • "+(time||escapeTime());
+if(type==="ai") meta+=` <span class="copy-btn" title="Copy">⧉</span>`;
+m.innerHTML=meta; b.appendChild(m);
+if(type==="user"){ r.appendChild(b); if(av) r.appendChild(av); }
+else { if(av) r.appendChild(av); r.appendChild(b); }
+chat.appendChild(r); chat.scrollTop=chat.scrollHeight;
+const cp=m.querySelector(".copy-btn");
+if(cp){ cp.onclick=()=>{ navigator.clipboard.writeText(t); cp.textContent="✅"; setTimeout(()=>cp.textContent="⧉",1200); }; }
+if(animate && (type==="ai"||type==="proactive")){ typewriter(txt,t,()=>{ txt.innerHTML=formatText(t); }); }
+else { txt.innerHTML=formatText(t); }
 }
 function addThinking(){
-  removeThinking();
-  const r=document.createElement("div"); r.className="message-row";
-  const av=document.createElement("div"); av.className="avatar ai"; av.innerHTML=LOGO_HTML;
-  const b=document.createElement("div"); b.className="message ai thinking";
-  b.innerHTML="<span></span><span></span><span></span><b style='margin-left:4px;font-weight:500'>Thinking...</b>";
-  r.appendChild(av); r.appendChild(b); chat.appendChild(r); chat.scrollTop=chat.scrollHeight;
+removeThinking();
+const r=document.createElement("div"); r.className="message-row";
+const av=document.createElement("div"); av.className="avatar ai"; av.innerHTML=LOGO_HTML;
+const b=document.createElement("div"); b.className="message ai thinking";
+b.innerHTML="<span></span><span></span><span></span><b style='margin-left:4px;font-weight:500'>Thinking...</b>";
+r.appendChild(av); r.appendChild(b); chat.appendChild(r); chat.scrollTop=chat.scrollHeight;
 }
 function removeThinking(){const o=document.querySelector(".thinking");if(o)o.parentElement.remove();}
 function setVoiceStatus(t){const s=document.getElementById("voiceStatus");if(s)s.textContent=t;}
 function showIndicator(state,text){const ind=document.getElementById("wakeIndicator");ind.className="wake-word-indicator "+state;if(text)ind.querySelector(".wake-word-text").textContent=text;}
-function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n\n**PREMIUM EDITION** 💎\n\n🎨 **6 Themes** - Settings-ல try பண்ணு\n🖼️ **4-Image Gallery** - Draw command-ல\n🎤 **Fast Voice** - instant TTS\n📱 **Mobile Sheet** - ✨ button tap\n🤖 **JARVIS Mode** - Settings-ல open பண்ணு\n\n**Try:** 'Draw a cyberpunk city' / 'Bitcoin price'","ai");}
+function showWelcome(){chat.innerHTML="";addMessage("வணக்கம் Vasanth! 👋\n**PREMIUM EDITION** 💎\n🎨 **6 Themes** - Settings-ல try பண்ணு\n🖼️ **4-Image Gallery** - Draw command-ல\n🎵 **Music Player** - JARVIS mode-ல controls\n🎤 **Fast Voice** - instant TTS\n📱 **Mobile Sheet** - ✨ button tap\n🤖 **JARVIS Mode** - Settings-ல open பண்ணு\n\n**Try:** 'Draw a cyberpunk city' / 'Play AR Rahman songs'","ai");}
 async function loadHistory(){try{const r=await fetch("/history");if(!r.ok)throw new Error();const d=await r.json();chat.innerHTML="";if(!d.history||d.history.length===0){showWelcome();return;}d.history.forEach(i=>{
-  let txt=i.text||"";
-  const ex=extractImgData(txt); txt=ex[0]; const imgData=ex[1];
-  const isProactive = txt.startsWith("[proactive]");
-  const cleanText = isProactive ? txt.substring(12) : txt;
-  addMessage(cleanText, isProactive ? "proactive" : (i.role==="user"?"user":"ai"), null, imgData);
+let txt=i.text||"";
+const ex=extractImgData(txt); txt=ex[0]; const imgData=ex[1];
+const isProactive = txt.startsWith("[proactive]");
+const cleanText = isProactive ? txt.substring(12) : txt;
+addMessage(cleanText, isProactive ? "proactive" : (i.role==="user"?"user":"ai"), null, imgData);
 });}catch(e){showWelcome();}}
 async function clearChat(){if(!confirm("Clear history?"))return;try{await fetch("/clear",{method:"POST"});showWelcome();setVoiceStatus("🧠 Fresh ready");}catch(e){alert("Error");}}
 function changeVoice(){
-  const voice=document.getElementById("voiceSelect").value;
-  setVoiceStatus("🎤 Voice switching...");
-  fetch("/change-voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({voice:voice})})
-    .then(r=>r.json()).then(d=>{ if(d.success){ setVoiceStatus("🎤 Voice: "+d.name); if(voiceEnabled){playTTS("Vanakkam macha! Naan "+d.name+" voice-la pesuren.");} } })
-    .catch(e=>setVoiceStatus("⚠️ Voice error"));
+const voice=document.getElementById("voiceSelect").value;
+setVoiceStatus("🎤 Voice switching...");
+fetch("/change-voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({voice:voice})})
+.then(r=>r.json()).then(d=>{ if(d.success){ setVoiceStatus("🎤 Voice: "+d.name); if(voiceEnabled){playTTS("Vanakkam macha! Naan "+d.name+" voice-la pesuren.");} } })
+.catch(e=>setVoiceStatus("⚠️ Voice error"));
 }
-
 let currentAudio=null;let currentDone=null;
 function stopSpeaking(){
-  if(currentAudio){try{currentAudio.onended=null;currentAudio.onerror=null;currentAudio.pause();}catch(e){}currentAudio=null;}
-  fetch("/voice/stop",{method:"POST"}).catch(()=>{});
-  if(currentDone){const d=currentDone;currentDone=null;d();}
-  else{document.body.classList.remove("speaking");setVoiceStatus("🔇 Muted");}
+if(currentAudio){try{currentAudio.onended=null;currentAudio.onerror=null;currentAudio.pause();}catch(e){}currentAudio=null;}
+fetch("/voice/stop",{method:"POST"}).catch(()=>{});
+if(currentDone){const d=currentDone;currentDone=null;d();}
+else{document.body.classList.remove("speaking");setVoiceStatus("🔇 Muted");}
 }
 function playTTS(t){
-  const key=(t||"").toLowerCase().trim();
-  if(QUICK_PHRASES[key]) t=QUICK_PHRASES[key];
-  return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);currentAudio=a;a.onplay=()=>{setVoiceStatus("🔊 Speaking... (tap waveform = STOP)");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{currentAudio=null;currentDone=null;document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};currentDone=done;a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});
+const key=(t||"").toLowerCase().trim();
+if(QUICK_PHRASES[key]) t=QUICK_PHRASES[key];
+return new Promise(async (resolve)=>{setVoiceStatus("🔊 Generating...");showIndicator("speaking","Speaking...");try{const r=await fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:t})});if(!r.ok){if(!busy)finishCycle();resolve();return;}const b=await r.blob();if(!b.size){if(!busy)finishCycle();resolve();return;}const u=URL.createObjectURL(b),a=new Audio(u);currentAudio=a;a.onplay=()=>{setVoiceStatus("🔊 Speaking... (tap waveform = STOP)");document.body.classList.add("speaking");showIndicator("speaking","Speaking...");};const done=()=>{currentAudio=null;currentDone=null;document.body.classList.remove("speaking");setVoiceStatus("🔊 Ready");URL.revokeObjectURL(u);if(!busy)finishCycle();resolve();};currentDone=done;a.onended=done;a.onerror=done;await a.play().catch(e=>{done();});}catch(e){document.body.classList.remove("speaking");setVoiceStatus("⚠️ Error");if(!busy)finishCycle();resolve();}});
 }
-
 function openLightbox(url){
-  const lb=document.getElementById("lightbox");
-  document.getElementById("lbImg").src=url;
-  document.getElementById("lbDownload").href=url;
-  lb.classList.add("show");
+const lb=document.getElementById("lightbox");
+document.getElementById("lbImg").src=url;
+document.getElementById("lbDownload").href=url;
+lb.classList.add("show");
 }
 function closeLightbox(){document.getElementById("lightbox").classList.remove("show");}
 function regenImage(){
-  closeLightbox();
-  const p=lastPrompt||"a cute robot in neon style";
-  input.value="Draw "+p;sendMessage();
+closeLightbox();
+const p=lastPrompt||"a cute robot in neon style";
+input.value="Draw "+p;sendMessage();
 }
-
 function quickSend(t){toggleSheet(false);input.value=t;sendMessage();}
 function finishCycle(){busy=false;showIndicator("","");if(liveMode){setTimeout(startLiveListen,400);}else if(wakeWordEnabled){setTimeout(startWake,600);}}
 async function sendMessage(){const t=input.value.trim();if(!t){finishCycle();return;}busy=true;stopWake();addMessage(t,"user");if(/draw|image|generate|picture|படம்|ஓவியம்/i.test(t)){lastPrompt=t.replace(/^(draw|generate|create|make|படம்)\s+/i,"");}input.value="";addThinking();setVoiceStatus(" Thinking...");showIndicator("listening","Processing...");try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:t})});if(!r.ok)throw new Error();const d=await r.json();removeThinking();const replyText=d.reply||"...";
@@ -1979,20 +2137,20 @@ function pickImage(){toggleSheet(false);document.getElementById("imageInput").cl
 async function onImagePicked(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async function(){const dataURL=reader.result;const q=input.value.trim()||"Idhula enna iruku?";busy=true;stopWake();addMessage("📷 "+q,"user",null,dataURL);input.value="";addThinking();try{const r=await fetch("/vision",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:dataURL,question:q})});const d=await r.json();removeThinking();addMessage(d.reply,"ai",null,null,true,d.brain||"");if(voiceEnabled){await playTTS(d.reply);}finishCycle();}catch(err){removeThinking();addMessage("Vision error","ai");finishCycle();}};reader.readAsDataURL(file);e.target.value="";}
 function detectWake(t){t=t.toLowerCase().trim();for(const p of WAKE_PATTERNS){const m=p.exec(t);if(m)return t.slice(m.index+m[0].length).trim();}return null;}
 function stopWake(){if(wakeRecognition){try{wakeRecognition.onend=null;wakeRecognition.onerror=null;wakeRecognition.stop();}catch(e){}wakeRecognition=null;}wakeActive=false;}
-function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "Macha"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;console.log("🎤 wake heard:",t);const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{setVoiceStatus("🗣️ Sollu macha...");if(voiceEnabled){playTTS("Sollu macha! Enna sollanum?").then(()=>startCommandRecognition());}else{startCommandRecognition();}}}};wakeRecognition.onerror=(e)=>{console.log("wake error:",e.error);setVoiceStatus("🎤 Mic: "+e.error);};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
+function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "'+(customWake||"Macha")+'"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;console.log("🎤 wake heard:",t);const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{setVoiceStatus("🗣️ Sollu macha...");if(voiceEnabled){playTTS("Sollu macha! Enna sollanum?").then(()=>startCommandRecognition());}else{startCommandRecognition();}}}};wakeRecognition.onerror=(e)=>{console.log("wake error:",e.error);setVoiceStatus("🎤 Mic: "+e.error);};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
 function startCommandRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){finishCycle();return;}commandRecognition=new SR();commandRecognition.lang="ta-IN";commandRecognition.continuous=false;commandRecognition.interimResults=false;let got=false;commandRecognition.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};commandRecognition.onend=()=>{if(!got)finishCycle();};setTimeout(()=>{try{commandRecognition.start();}catch(e){finishCycle();}},400);}
 function toggleWakeWord(){wakeWordEnabled=!wakeWordEnabled;const b=document.getElementById("wakeBtn");if(wakeWordEnabled){b.textContent="🎙️ Wake: ON";b.classList.add("active");startWake();}else{b.textContent="🎙️ Wake: OFF";b.classList.remove("active");stopWake();busy=false;showIndicator("","");}}
 function startVoice(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){setVoiceStatus("⚠️ Chrome use பண்ணுங்க");return;}
-  if(!window.isSecureContext){setVoiceStatus("🔒 Mic localhost-ல மட்டும் தான்");return;}
-  busy=true;stopWake();
-  const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;
-  setVoiceStatus("🎤 Speaking...");
-  r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};
-  r.onerror=(e)=>{setVoiceStatus(e.error==="not-allowed"?"🚫 Mic Allow பண்ணுங்க":e.error==="no-speech"?"🤫 மறுபடி பேசு":"⚠️ Mic: "+e.error);};
-  r.onend=()=>{if(!got)finishCycle();};
-  try{r.start();}catch(e){finishCycle();}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){setVoiceStatus("⚠️ Chrome use பண்ணுங்க");return;}
+if(!window.isSecureContext){setVoiceStatus("🔒 Mic localhost-ல மட்டும் தான்");return;}
+busy=true;stopWake();
+const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;
+setVoiceStatus("🎤 Speaking...");
+r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};
+r.onerror=(e)=>{setVoiceStatus(e.error==="not-allowed"?"🚫 Mic Allow பண்ணுங்க":e.error==="no-speech"?"🤫 மறுபடி பேசு":"⚠️ Mic: "+e.error);};
+r.onend=()=>{if(!got)finishCycle();};
+try{r.start();}catch(e){finishCycle();}
 }
 let deferredPrompt=null;
 window.addEventListener("beforeinstallprompt",(e)=>{e.preventDefault();deferredPrompt=e;const b=document.getElementById("installBtn");if(b)b.style.display="inline-block";});
@@ -2006,6 +2164,71 @@ loadHistory();setTimeout(startWake,1000);
 </body>
 </html>
 """
+
+NOTES_FILE = os.path.join(DATA_DIR, "notes.json")
+
+def load_notes():
+    try:
+        if os.path.exists(NOTES_FILE):
+            with open(NOTES_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    except: pass
+    return {"notes": [], "todos": []}
+
+def save_notes(d):
+    try:
+        with open(NOTES_FILE, "w", encoding="utf-8") as f: json.dump(d, f, ensure_ascii=False, indent=2)
+    except: pass
+
+@app.route("/api/notes", methods=["GET","POST"])
+def api_notes():
+    d = load_notes()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        act = data.get("action")
+        if act == "add_note":
+            d["notes"].append({"text": data.get("text",""), "time": time.time()})
+        elif act == "add_todo":
+            d["todos"].append({"text": data.get("text",""), "done": False, "time": time.time()})
+        elif act == "toggle_todo":
+            i = data.get("index")
+            if isinstance(i,int) and 0 <= i < len(d["todos"]): d["todos"][i]["done"] = not d["todos"][i]["done"]
+        elif act == "del_note":
+            i = data.get("index")
+            if isinstance(i,int) and 0 <= i < len(d["notes"]): d["notes"].pop(i)
+        elif act == "del_todo":
+            i = data.get("index")
+            if isinstance(i,int) and 0 <= i < len(d["todos"]): d["todos"].pop(i)
+        save_notes(d)
+        return jsonify({"success": True, "notes": d})
+    return jsonify(d)
+
+@app.route("/api/export")
+def export_chat():
+    lines = ["VASANTH AI — CHAT EXPORT", "="*40, ""]
+    for m in conversation_history:
+        who = "You" if m["role"] == "user" else "Vasanth AI"
+        lines.append(f"[{who}] {m['text']}\n")
+    return Response("\n".join(lines), mimetype="text/plain", headers={"Content-Disposition": "attachment; filename=vasanth_ai_chat.txt"})
+
+def generate_story(topic):
+    try:
+        prompt = f"""Write a short engaging story in Tanglish about: {topic}
+Return ONLY valid JSON like:
+{{"title":"Story title","scenes":[{{"text":"2-3 sentence scene in Tanglish","image":"english image prompt"}},{{"text":"...","image":"..."}},{{"text":"...","image":"..."}},{{"text":"...","image":"..."}}]}}"""
+        messages = [{"role":"system","content":"You are a creative storyteller. Return ONLY valid JSON with exactly 4 scenes."},{"role":"user","content":prompt}]
+        reply = _groq_complete(messages)
+        m = re.search(r'\{.*\}', reply or "", re.DOTALL)
+        data = json.loads(m.group(0))
+        scenes = []
+        for s in data.get("scenes", [])[:4]:
+            url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(s.get("image","fantasy cinematic scene")) + "?width=640&height=480&nologo=true"
+            scenes.append({"text": s.get("text",""), "url": url})
+        return f"📖 **{data.get('title','Story')}**\n[[STORY:{json.dumps(scenes)}]]"
+    except Exception as e:
+        print(f"Story error: {e}")
+        return "Story generate panna mudiyala macha 😅 Thirumba try pannu!"
+
+SYSTEM_START = time.time()
 
 SYSTEM_START = time.time()
 
@@ -2047,9 +2270,9 @@ def vision():
     if not image_data or groq_client is None:
         return jsonify({"reply": "மச்சா 😅 Photo upload pannunga / API key illa."})
     messages = [{"role":"system","content":build_system()},{"role":"user","content":[{"type":"text","text":question},{"type":"image_url","image_url":{"url":image_data}}]}]
-    for model in ["qwen/qwen3.6-27b","meta-llama/llama-4-scout-17b-16e-instruct"]:
+    for model in ["meta-llama/llama-4-scout-17b-16e-instruct","qwen/qwen3.6-27b","openai/gpt-oss-120b"]:
         try:
-            response = groq_client.chat.completions.create(model=model, messages=messages, max_tokens=800)
+            response = groq_client.chat.completions.create(model=model, messages=messages, max_tokens=600)
             content = response.choices[0].message.content
             reply = clean_think(content.strip() if content else "")
             set_brain("⚡ Groq")
@@ -2261,234 +2484,345 @@ body.speaking .wave i{animation:wv .8s infinite;}
 @keyframes wv{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
 @media(max-width:1100px){.wrap{grid-template-columns:1fr 1fr;}.center{grid-column:1/-1;order:-1;}}
 @media(max-width:700px){
-  .wrap{grid-template-columns:1fr;gap:10px;padding:10px;}
-  .tclock,.tchips{display:none;}
-  .top{padding:8px 10px;}
-  .tlogo img{width:34px;height:34px;}
-  .tlogo h1{font-size:13px;letter-spacing:2px;}
-  .ctitle h2{font-size:16px;letter-spacing:4px;}
-  .ctitle small{font-size:7px;}
-  .stage{height:330px;}
-  .orb{width:150px;height:150px;}
-  .rings i:nth-child(3){display:none;}
-  .rings i:nth-child(1){width:180px;height:46px;margin:-23px 0 0 -90px;}
-  .rings i:nth-child(2){width:240px;height:60px;margin:-30px 0 0 -120px;}
-  .bub{display:none;}
-  .fchip{padding:6px 10px;font-size:9px;}
-  .dock{grid-template-columns:repeat(4,1fr);width:100%;padding:0 10px;}
-  .dbtn{width:100%;height:56px;}
-  .cmdbar{position:sticky;bottom:8px;z-index:6;max-width:100%;}
-  .panel{padding:10px;}
-  .cores{gap:6px;}
-  .core{padding:6px 10px;}
+.wrap{grid-template-columns:1fr;gap:10px;padding:10px;}
+.tclock,.tchips{display:none;}
+.top{padding:8px 10px;}
+.tlogo img{width:34px;height:34px;}
+.tlogo h1{font-size:13px;letter-spacing:2px;}
+.ctitle h2{font-size:16px;letter-spacing:4px;}
+.ctitle small{font-size:7px;}
+.stage{height:330px;}
+.orb{width:150px;height:150px;}
+.rings i:nth-child(3){display:none;}
+.rings i:nth-child(1){width:180px;height:46px;margin:-23px 0 0 -90px;}
+.rings i:nth-child(2){width:240px;height:60px;margin:-30px 0 0 -120px;}
+.bub{display:none;}
+.fchip{padding:6px 10px;font-size:9px;}
+.dock{grid-template-columns:repeat(4,1fr);width:100%;padding:0 10px;}
+.dbtn{width:100%;height:56px;}
+.cmdbar{position:sticky;bottom:8px;z-index:6;max-width:100%;}
+.panel{padding:10px;}
+.cores{gap:6px;}
+.core{padding:6px 10px;}
 }
 </style>
 </head>
 <body>
 <div class="top">
-  <div class="tlogo"><img src="/logo.png"><div><h1>VASANTH AI</h1><small>QUANTUM CORE • v3.0</small></div></div>
-  <div class="tclock"><b id="clock">--:--:--</b><small id="datestr">--</small></div>
-  <div class="tright">
-    <div class="tchips">
-      <div class="tchip">UPTIME<b id="uptime">--</b></div>
-      <div class="tchip">AI STATUS<b>ONLINE</b></div>
-      <div class="tchip">VOICE<b><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></span> ACTIVE</b></div>
-    </div>
-    <button class="icobtn" onclick="startMic(false)">🎤</button>
-    <button class="icobtn" onclick="location.reload()">⚙</button>
-    <button class="icobtn" onclick="location.href='/'">⏻</button>
-  </div>
+<div class="tlogo"><img src="/logo.png"><div><h1>VASANTH AI</h1><small>QUANTUM CORE • v3.0</small></div></div>
+<div class="tclock"><b id="clock">--:--:--</b><small id="datestr">--</small></div>
+<div class="tright">
+<div class="tchips">
+<div class="tchip">UPTIME<b id="uptime">--</b></div>
+<div class="tchip">AI STATUS<b>ONLINE</b></div>
+<div class="tchip">VOICE<b><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></span> ACTIVE</b></div>
+</div>
+<button class="icobtn" onclick="startMic(false)">🎤</button>
+<button class="icobtn" onclick="location.reload()">⚙</button>
+<button class="icobtn" onclick="location.href='/'">⏻</button>
+</div>
 </div>
 <div class="wrap">
-  <div class="col">
-    <div class="panel">
-      <h3>SYSTEM OVERVIEW</h3>
-      <div style="display:flex;gap:12px;align-items:center">
-        <div class="ring" id="cpuRing"><span id="cpuTxt">0%</span></div>
-        <div style="flex:1">
-          <div class="bar"><small><span>RAM Usage</span><span id="ramPct">--%</span></small><div class="tr"><div class="fl" id="ramBar" style="width:0%"></div></div></div>
-          <div class="bar"><small><span>Disk Usage</span><span id="diskPct">--%</span></small><div class="tr"><div class="fl" id="diskBar" style="width:0%"></div></div></div>
-          <div class="bar"><small><span>Network</span><span id="netSp">--</span></small><div class="tr"><div class="fl" style="width:60%"></div></div></div>
-        </div>
-      </div>
-    </div>
-    <div class="panel">
-      <h3>NETWORK STATUS</h3>
-      <div class="row"><span>Download</span><b id="ndown">-- MB</b></div>
-      <div class="row"><span>Upload</span><b id="nup">-- MB</b></div>
-      <div class="row"><span>Status</span><b style="color:var(--grn)">CONNECTED</b></div>
-    </div>
-    <div class="panel">
-      <h3>WEATHER — CHENNAI</h3>
-      <div style="display:flex;gap:12px;align-items:center">
-        <div class="ring" id="wRing"><span id="wTemp">--</span></div>
-        <div><b id="wCond" style="font-size:12px">loading...</b><small style="color:var(--mut);font-size:9px">Chennai, India</small></div>
-      </div>
-      <div class="row"><span>Humidity</span><b id="wHum">--</b></div>
-      <div class="row"><span>Wind</span><b id="wWind">--</b></div>
-      <div class="row"><span>Rain</span><b id="wRain">--</b></div>
-    </div>
-    <div class="panel">
-      <h3>AI INSIGHTS</h3>
-      <div class="row"><span>Productivity</span><b style="color:var(--grn)">85%</b></div>
-      <div class="row"><span>Efficiency</span><b style="color:var(--cy)">92%</b></div>
-      <div class="row"><span>Active Time</span><b id="uptime2">--</b></div>
-    </div>
-  </div>
-  <div class="center">
-    <div class="ctitle"><h2>VASANTH AI</h2><small>YOUR PERSONAL AI ASSISTANT</small><br><span class="on">● ONLINE & ACTIVE</span></div>
-    <div class="stage">
-      <div class="stars" id="stars"></div>
-      <div class="rings"><i></i><i></i><i></i></div>
-      <div class="chiprow">
-        <div class="fchip" id="fWeather">☀ --°C<small>Humidity --%</small></div>
-        <div class="fchip" id="fStats">CPU --%<small>RAM --%</small></div>
-      </div>
-      <div class="orb"></div>
-      <div class="fchip b" id="fNet">⚡ Network: -- MB</div>
-      <div class="bub l">Hello Vasanth 👋<br>How can I help you?</div>
-      <div class="bub r">என்ன உதவி<br>செய்யலாம்?</div>
-    </div>
-    <div class="dock">
-      <button class="dbtn" onclick="location.href='/'">💬<small>Chat</small></button>
-      <button class="dbtn" onclick="startMic(false)">🎤<small>Voice</small></button>
-      <button class="dbtn" onclick="cmd('open youtube')">▶<small>YouTube</small></button>
-      <button class="dbtn" onclick="window.open('https://web.whatsapp.com')">🟢<small>WhatsApp</small></button>
-      <button class="dbtn" onclick="cmd('open chrome')">🔍<small>Google</small></button>
-      <button class="dbtn" onclick="window.open('https://mail.google.com')">✉<small>Gmail</small></button>
-      <button class="dbtn" onclick="cmd('time')">📅<small>Time</small></button>
-      <button class="dbtn" onclick="cmd('open notepad')">📝<small>Notepad</small></button>
-    </div>
-    <div class="cores">
-      <div class="core"><i>🎤</i><div>SPEECH RECOGNITION<b>● Active</b></div></div>
-      <div class="core"><i>🧠</i><div>NLP ENGINE<b>● Active</b></div></div>
-      <div class="core"><i>🤖</i><div>AUTOMATION<b>● Active</b></div></div>
-      <div class="core"><i>🔮</i><div>QUANTUM CORE<b id="memCore">--</b></div></div>
-    </div>
-    <div class="cmdbar">
-      <input id="cin" placeholder="Type your command or ask anything..." onkeydown="if(event.key==='Enter')cmd()">
-      <button onclick="cmd()">➤</button>
-      <button onclick="startMic(false)">🎤</button>
-    </div>
-  </div>
-  <div class="col">
-    <div class="panel">
-      <h3>RECENT ACTIVITY</h3>
-      <div id="acts"><div class="act"><i>✅</i>System boot complete</div></div>
-    </div>
-    <div class="panel">
-      <h3>SMART RESPONSE</h3>
-      <div style="border:1px solid var(--line);border-radius:10px;padding:8px;font-size:10px;color:var(--cy);margin-bottom:8px">வெளியில் நிலவரம் என்ன?</div>
-      <div id="smartW" style="font-size:10px;color:var(--mut);line-height:1.7">loading...</div>
-    </div>
-    <div class="panel">
-      <h3>VOICE INPUT</h3>
-      <div style="display:flex;gap:10px;align-items:center">
-        <button class="icobtn" style="width:44px;height:44px;border-radius:50%" onclick="startMic(false)">🎤</button>
-        <div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      </div>
-      <div style="text-align:center;font-size:9px;color:var(--pu);margin-top:6px" id="micState">Listening...</div>
-    </div>
-    <div class="panel">
-      <h3>SYSTEM CONTROL</h3>
-      <div style="display:flex;justify-content:center;margin-bottom:8px"><div class="ring" style="--p:50%"><span>50%</span></div></div>
-      <div class="tgl"><span>📶 Wi-Fi</span><b>Connected</b></div>
-      <div class="tgl"><span>🔵 Bluetooth</span><b>On</b></div>
-      <div class="tgl"><span>🌙 Night Mode</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
-      <div class="tgl"><span>🔕 Do Not Disturb</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
-      <div class="tgl"><span>⚡ Performance</span><b>Balanced</b></div>
-    </div>
-    <div class="panel">
-      <h3>QUICK ACTIONS</h3>
-      <div class="qact">
-        <div class="qa" onclick="cmd('lock')">🔒 Lock System</div>
-        <div class="qa" onclick="cmd('take screenshot')">📸 Screenshot</div>
-        <div class="qa" onclick="cmd('open camera')">📷 Open Camera</div>
-        <div class="qa" onclick="cmd('open calculator')">🧮 Calculator</div>
-        <div class="qa" onclick="cmd('play music')">🎵 Play Music</div>
-        <div class="qa" onclick="cmd('battery')">🔋 System Info</div>
-      </div>
-    </div>
-    <div class="panel">
-      <h3>COMMAND SHORTCUTS</h3>
-      <div class="qact">
-        <div class="qa" onclick="cmd('open chrome')">🌐 Open Chrome</div>
-        <div class="qa" onclick="window.open('https://web.whatsapp.com')">🟢 WhatsApp</div>
-        <div class="qa" onclick="cmd('shutdown')">⏻ Shutdown PC</div>
-        <div class="qa" onclick="cmd('weather')">🌦 Weather</div>
-      </div>
-    </div>
-  </div>
+<div class="col">
+<div class="panel">
+<h3>SYSTEM OVERVIEW</h3>
+<div style="display:flex;gap:12px;align-items:center">
+<div class="ring" id="cpuRing"><span id="cpuTxt">0%</span></div>
+<div style="flex:1">
+<div class="bar"><small><span>RAM Usage</span><span id="ramPct">--%</span></small><div class="tr"><div class="fl" id="ramBar" style="width:0%"></div></div></div>
+<div class="bar"><small><span>Disk Usage</span><span id="diskPct">--%</span></small><div class="tr"><div class="fl" id="diskBar" style="width:0%"></div></div></div>
+<div class="bar"><small><span>Network</span><span id="netSp">--</span></small><div class="tr"><div class="fl" style="width:60%"></div></div></div>
+</div>
+</div>
+</div>
+<div class="panel">
+<h3>LIVE INSIGHTS 📈</h3>
+<canvas id="graph" width="240" height="90" style="width:100%;height:90px"></canvas>
+<div style="display:flex;gap:12px;font-size:8px;color:var(--mut);margin-top:4px"><span style="color:#7dd3fc">— CPU</span><span style="color:#c084fc">— RAM</span></div>
+</div>
+<div class="panel">
+<h3>AUTOMATION CENTER</h3>
+<div class="tgl auto-tgl" data-key="morning_routine" onclick="toggleAuto(this)"><span>🌅 Morning Routine</span><b>ON</b></div>
+<div class="tgl auto-tgl" data-key="work_mode" onclick="toggleAuto(this)"><span>💼 Work Mode (DND)</span><b>OFF</b></div>
+<div class="tgl auto-tgl" data-key="night_routine" onclick="toggleAuto(this)"><span>🌙 Night Routine</span><b>OFF</b></div>
+<div class="tgl auto-tgl" data-key="battery_saver" onclick="toggleAuto(this)"><span>🔋 Battery Saver</span><b>OFF</b></div>
+<div class="tgl auto-tgl" data-key="auto_backup" onclick="toggleAuto(this)"><span>💾 Auto Backup</span><b>OFF</b></div>
+</div>
+<div class="panel">
+<h3>NETWORK STATUS</h3>
+<div class="row"><span>Download</span><b id="ndown">-- MB</b></div>
+<div class="row"><span>Upload</span><b id="nup">-- MB</b></div>
+<div class="row"><span>Status</span><b style="color:var(--grn)">CONNECTED</b></div>
+</div>
+<div class="panel">
+<h3>WEATHER — CHENNAI</h3>
+<div style="display:flex;gap:12px;align-items:center">
+<div class="ring" id="wRing"><span id="wTemp">--</span></div>
+<div><b id="wCond" style="font-size:12px">loading...</b><small style="color:var(--mut);font-size:9px">Chennai, India</small></div>
+</div>
+<div class="row"><span>Humidity</span><b id="wHum">--</b></div>
+<div class="row"><span>Wind</span><b id="wWind">--</b></div>
+<div class="row"><span>Rain</span><b id="wRain">--</b></div>
+</div>
+<div class="panel">
+<h3>AI INSIGHTS</h3>
+<div class="row"><span>Productivity</span><b style="color:var(--grn)">85%</b></div>
+<div class="row"><span>Efficiency</span><b style="color:var(--cy)">92%</b></div>
+<div class="row"><span>Active Time</span><b id="uptime2">--</b></div>
+</div>
+</div>
+<div class="center">
+<div class="ctitle"><h2>VASANTH AI</h2><small>YOUR PERSONAL AI ASSISTANT</small><br><span class="on">● ONLINE & ACTIVE</span></div>
+<div class="stage">
+<div class="stars" id="stars"></div>
+<div class="rings"><i></i><i></i><i></i></div>
+<div class="chiprow">
+<div class="fchip" id="fWeather">☀ --°C<small>Humidity --%</small></div>
+<div class="fchip" id="fStats">CPU --%<small>RAM --%</small></div>
+</div>
+<div class="orb"></div>
+<div class="fchip b" id="fNet">⚡ Network: -- MB</div>
+<div class="bub l">Hello Vasanth 👋<br>How can I help you?</div>
+<div class="bub r">என்ன உதவி<br>செய்யலாம்?</div>
+</div>
+<div class="dock">
+<button class="dbtn" onclick="location.href='/'">💬<small>Chat</small></button>
+<button class="dbtn" onclick="startMic(false)">🎤<small>Voice</small></button>
+<button class="dbtn" onclick="cmd('open youtube')">▶<small>YouTube</small></button>
+<button class="dbtn" onclick="window.open('https://web.whatsapp.com')">🟢<small>WhatsApp</small></button>
+<button class="dbtn" onclick="cmd('open chrome')">🔍<small>Google</small></button>
+<button class="dbtn" onclick="window.open('https://mail.google.com')">✉<small>Gmail</small></button>
+<button class="dbtn" onclick="cmd('time')">📅<small>Time</small></button>
+<button class="dbtn" onclick="cmd('open notepad')">📝<small>Notepad</small></button>
+</div>
+<div class="cores">
+<div class="core"><i>🎤</i><div>SPEECH RECOGNITION<b>● Active</b></div></div>
+<div class="core"><i>🧠</i><div>NLP ENGINE<b>● Active</b></div></div>
+<div class="core"><i>🤖</i><div>AUTOMATION<b>● Active</b></div></div>
+<div class="core"><i>🔮</i><div>QUANTUM CORE<b id="memCore">--</b></div></div>
+</div>
+<div class="cmdbar">
+<input id="cin" placeholder="Type your command or ask anything..." onkeydown="if(event.key==='Enter')cmd()">
+<button onclick="cmd()">➤</button>
+<button onclick="startMic(false)">🎤</button>
+</div>
+</div>
+<div class="col">
+<div class="panel">
+<h3>RECENT ACTIVITY</h3>
+<div id="acts"><div class="act"><i>✅</i>System boot complete</div></div>
+</div>
+<div class="panel">
+<h3>SMART RESPONSE</h3>
+<div style="border:1px solid var(--line);border-radius:10px;padding:8px;font-size:10px;color:var(--cy);margin-bottom:8px">வெளியில் நிலவரம் என்ன?</div>
+<div id="smartW" style="font-size:10px;color:var(--mut);line-height:1.7">loading...</div>
+</div>
+<div class="panel">
+<h3>🎵 MUSIC PLAYER</h3>
+<div id="npTitle" style="font-size:11px;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:8px">🎵 Nothing playing</div>
+<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:8px">
+<button class="qa" style="flex:1;justify-content:center" onclick="music('prev')">⏮</button>
+<button class="qa" style="flex:1;justify-content:center" onclick="music('pause')">⏯</button>
+<button class="qa" style="flex:1;justify-content:center" onclick="music('next')">⏭</button>
+<button class="qa" style="flex:1;justify-content:center" onclick="music('stop')">⏹</button>
+</div>
+<div class="cmdbar" style="margin-top:0;max-width:100%;padding:0">
+<input id="musIn" placeholder="Play AR Rahman..." style="padding:9px 12px;font-size:11px">
+<button style="width:38px;height:38px" onclick="music('play')">▶</button>
+</div>
+</div>
+<div class="panel">
+<h3>📝 NOTES + TO-DO</h3>
+<div id="notesBox"></div>
+<div class="cmdbar" style="margin-top:8px;max-width:100%;padding:0">
+<input id="noteIn" placeholder="Note / todo..." style="padding:9px 12px;font-size:11px">
+<button style="width:38px;height:38px" onclick="addQuickNote()">➕</button>
+</div>
+</div>
+<div class="panel">
+<h3>VOICE INPUT</h3>
+<div style="display:flex;gap:10px;align-items:center">
+<button class="icobtn" style="width:44px;height:44px;border-radius:50%" onclick="startMic(false)">🎤</button>
+<div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+</div>
+<div style="text-align:center;font-size:9px;color:var(--pu);margin-top:6px" id="micState">Listening...</div>
+</div>
+<div class="panel">
+<h3>SYSTEM CONTROL</h3>
+<div style="display:flex;justify-content:center;margin-bottom:8px"><div class="ring" style="--p:50%"><span>50%</span></div></div>
+<div class="tgl"><span>📶 Wi-Fi</span><b>Connected</b></div>
+<div class="tgl"><span>🔵 Bluetooth</span><b>On</b></div>
+<div class="tgl"><span>🌙 Night Mode</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
+<div class="tgl"><span>🔕 Do Not Disturb</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
+<div class="tgl"><span>⚡ Performance</span><b>Balanced</b></div>
+</div>
+<div class="panel">
+<h3>QUICK ACTIONS</h3>
+<div class="qact">
+<div class="qa" onclick="cmd('lock')">🔒 Lock System</div>
+<div class="qa" onclick="cmd('take screenshot')">📸 Screenshot</div>
+<div class="qa" onclick="cmd('open camera')">📷 Open Camera</div>
+<div class="qa" onclick="cmd('open calculator')">🧮 Calculator</div>
+<div class="qa" onclick="cmd('play music')">🎵 Play Music</div>
+<div class="qa" onclick="cmd('battery')">🔋 System Info</div>
+</div>
+</div>
+<div class="panel">
+<h3>COMMAND SHORTCUTS</h3>
+<div class="qact">
+<div class="qa" onclick="cmd('open chrome')">🌐 Open Chrome</div>
+<div class="qa" onclick="window.open('https://web.whatsapp.com')">🟢 WhatsApp</div>
+<div class="qa" onclick="cmd('shutdown')">⏻ Shutdown PC</div>
+<div class="qa" onclick="cmd('weather')">🌦 Weather</div>
+</div>
+</div>
+</div>
 </div>
 <div class="foot"><span><b>VASANTH AI</b> — 100% TAMIL • தமிழ்</span><span><b>VOICE</b> | <b>AI</b> | <b>AUTOMATION</b> | <b>QUANTUM CORE</b></span></div>
 <script>
 function $(id){return document.getElementById(id);}
 let voiceEnabled = localStorage.getItem("jarvisVoice") !== "off";
+const cpuHist=[],ramHist=[];
+function drawGraph(){const c=document.getElementById("graph");if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);x.strokeStyle="rgba(125,211,252,.15)";x.lineWidth=1;for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,c.height*i/4);x.lineTo(c.width,c.height*i/4);x.stroke();}function ln(h,col){if(h.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();h.forEach((v,i)=>{const px=(i/59)*c.width;const py=c.height-(v/100)*c.height;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}ln(cpuHist,"#7dd3fc");ln(ramHist,"#c084fc");}
 (function(){const s=$("stars");if(!s)return;for(let i=0;i<70;i++){const d=document.createElement("i");d.style.left=Math.random()*100+"%";d.style.top=Math.random()*100+"%";const sz=(Math.random()*2+1).toFixed(1);d.style.width=sz+"px";d.style.height=sz+"px";d.style.animationDelay=(Math.random()*4).toFixed(1)+"s";s.appendChild(d);}})();
-function playTTS(text){
-  if(!voiceEnabled||!text)return;
-  fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text})})
-  .then(r=>r.blob()).then(b=>{
-    if(!b.size)return;
-    const u=URL.createObjectURL(b),a=new Audio(u);
-    document.body.classList.add("speaking");
-    const off=()=>{document.body.classList.remove("speaking");URL.revokeObjectURL(u);};
-    a.onended=off;a.onerror=off;
-    a.play().catch(off);
-  }).catch(()=>{});
+function toggleVoice(){
+voiceEnabled=!voiceEnabled;
+localStorage.setItem("jarvisVoice",voiceEnabled?"on":"off");
+setVoiceState();
 }
-setInterval(()=>{const d=new Date();$("clock").textContent=d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});$("datestr").textContent=d.toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});},1000);
+function setVoiceState(){
+document.title = voiceEnabled ? "VASANTH AI — QUANTUM 🔊" : "VASANTH AI — QUANTUM 🔇";
+}
+function playTTS(text){
+if(!voiceEnabled||!text)return;
+fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text})})
+.then(r=>r.blob()).then(b=>{
+if(!b.size)return;
+const u=URL.createObjectURL(b),a=new Audio(u);
+document.body.classList.add("speaking");
+const off=()=>{document.body.classList.remove("speaking");URL.revokeObjectURL(u);};
+a.onended=off;a.onerror=off;
+a.play().catch(off);
+}).catch(()=>{});
+}
+setInterval(()=>{const d=new Date();const c=$("clock");if(c)c.textContent=d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});const ds=$("datestr");if(ds)ds.textContent=d.toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});},1000);
 function fmtUp(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h>0?h+"h "+m+"m":m+"m "+(s%60)+"s";}
 setInterval(async()=>{
-  try{
-    const r=await fetch("/api/stats");const d=await r.json();
-    $("cpuRing").style.setProperty("--p",d.cpu+"%");$("cpuTxt").textContent=Math.round(d.cpu)+"%";
-    $("ramPct").textContent=Math.round(d.ram_pct)+"%";$("ramBar").style.width=d.ram_pct+"%";
-    $("diskPct").textContent=d.disk_pct+"%";$("diskBar").style.width=d.disk_pct+"%";
-    $("netSp").textContent=d.net_down+" MB";
-    $("ndown").textContent=d.net_down+" MB";$("nup").textContent=d.net_up+" MB";
-    $("uptime").textContent=fmtUp(d.uptime);$("uptime2").textContent=fmtUp(d.uptime);
-    $("memCore").textContent="● "+d.messages+" Stored";
-    $("fStats").innerHTML="CPU "+Math.round(d.cpu)+"%<small>RAM "+Math.round(d.ram_pct)+"%</small>";
-    $("fNet").textContent="⚡ Network: "+d.net_down+" MB";
-  }catch(e){}
+try{
+const r=await fetch("/api/stats");const d=await r.json();
+$("cpuRing").style.setProperty("--p",d.cpu+"%");$("cpuTxt").textContent=Math.round(d.cpu)+"%";
+$("ramPct").textContent=Math.round(d.ram_pct)+"%";$("ramBar").style.width=d.ram_pct+"%";
+$("diskPct").textContent=d.disk_pct+"%";$("diskBar").style.width=d.disk_pct+"%";
+$("netSp").textContent=d.net_down+" MB";
+$("ndown").textContent=d.net_down+" MB";$("nup").textContent=d.net_up+" MB";
+$("uptime").textContent=fmtUp(d.uptime);$("uptime2").textContent=fmtUp(d.uptime);
+$("memCore").textContent="● "+d.messages+" Stored";
+$("fStats").innerHTML="CPU "+Math.round(d.cpu)+"%<small>RAM "+Math.round(d.ram_pct)+"%</small>";
+$("fNet").textContent="⚡ Network: "+d.net_down+" MB";
+cpuHist.push(d.cpu);ramHist.push(d.ram_pct);
+if(cpuHist.length>60)cpuHist.shift();if(ramHist.length>60)ramHist.shift();
+drawGraph();
+}catch(e){}
 },2000);
 fetch("/api/weather").then(r=>r.json()).then(d=>{
-  if(d.temp==null){$("wCond").textContent="No internet";return;}
-  $("wTemp").textContent=d.temp+"°";$("wRing").style.setProperty("--p",Math.min(d.temp*2,100)+"%");
-  $("wCond").textContent=d.temp>=30?"Hot & Humid":"Pleasant";
-  $("wHum").textContent=d.hum+"%";$("wWind").textContent=d.wind+" km/h";$("wRain").textContent=d.rain+"%";
-  $("fWeather").innerHTML="☀ "+d.temp+"°C<small>Humidity "+d.hum+"%</small>";
-  $("smartW").innerHTML="🌤 <b>"+d.temp+"°C</b> | "+(d.temp>=30?"Partly Cloudy":"Pleasant")+"<br>Humidity: "+d.hum+"% • Wind: "+d.wind+" km/h<br>Rain chance: "+d.rain+"% — "+(d.rain>=50?"குடை எடுத்து வா! ☂":"பரவாயில்லை! ☀");
+if(d.temp==null){$("wCond").textContent="No internet";return;}
+$("wTemp").textContent=d.temp+"°";$("wRing").style.setProperty("--p",Math.min(d.temp*2,100)+"%");
+$("wCond").textContent=d.temp>=30?"Hot & Humid":"Pleasant";
+$("wHum").textContent=d.hum+"%";$("wWind").textContent=d.wind+" km/h";$("wRain").textContent=d.rain+"%";
+$("fWeather").innerHTML="☀ "+d.temp+"°C<small>Humidity "+d.hum+"%</small>";
+$("smartW").innerHTML="🌤 <b>"+d.temp+"°C</b> | "+(d.temp>=30?"Partly Cloudy":"Pleasant")+"<br>Humidity: "+d.hum+"% • Wind: "+d.wind+" km/h<br>Rain chance: "+d.rain+"% — "+(d.rain>=50?"குடை எடுத்து வா! ☂":"பரவாயில்லை! ☀");
 }).catch(()=>{$("wCond").textContent="Offline";});
 fetch("/history").then(r=>r.json()).then(d=>{
-  const box=$("acts");box.innerHTML="";
-  (d.history||[]).slice(-5).reverse().forEach(h=>{
-    const t=String(h.text||"");
-    const ic=t.toLowerCase().includes("youtube")?"▶":t.toLowerCase().includes("screenshot")?"📸":h.role==="user"?"👤":"🤖";
-    const div=document.createElement("div");div.className="act";
-    div.innerHTML="<i>"+ic+"</i>"+t.replace(/[<>&]/g,"").slice(0,32);
-    box.appendChild(div);
-  });
+const box=$("acts");box.innerHTML="";
+(d.history||[]).slice(-5).reverse().forEach(h=>{
+const t=String(h.text||"");
+const ic=t.toLowerCase().includes("youtube")?"▶":t.toLowerCase().includes("screenshot")?"📸":h.role==="user"?"👤":"";
+const div=document.createElement("div");div.className="act";
+div.innerHTML="<i>"+ic+"</i>"+t.replace(/[<>&]/g,"").slice(0,32);
+box.appendChild(div);
+});
 }).catch(()=>{});
-async function cmd(t){
-  const q=t||$("cin").value.trim();if(!q)return;$("cin").value="";
-  try{
-    const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:q})});
-    const d=await r.json();
-    playTTS(String(d.reply||""));
-  }catch(e){}
+function updMusic(m){ if(m){const t=$("npTitle"); if(t)t.innerHTML=(m.playing?"🎵 ":"⏸ ")+(m.title||"Nothing playing");} }
+setInterval(()=>{fetch("/api/music").then(r=>r.json()).then(updMusic).catch(()=>{});},3000);
+function music(act){
+const q=(document.getElementById("musIn")||{}).value||"";
+fetch("/api/music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:act,query:q})}).then(r=>r.json()).then(d=>{updMusic(d.music);});
 }
 function startMic(cont){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){$("micState").textContent="Chrome மட்டும் தான்";return;}
-  if(!window.isSecureContext){$("micState").textContent="localhost-ல மட்டும்";return;}
-  const r=new SR();r.lang="ta-IN";r.continuous=cont;r.interimResults=false;
-  $("micState").textContent="🎧 Listening...";
-  r.onresult=(e)=>{const t=e.results[e.results.length-1][0].transcript;cmd(t);};
-  r.onerror=(e)=>{$("micState").textContent="⚠️ "+e.error;};
-  r.onend=()=>{if(cont)startMic(true);else $("micState").textContent="Listening...";};
-  try{r.start();}catch(e){}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){const ms=$("micState");if(ms)ms.textContent="Chrome மட்டும் தான்";return;}
+if(!window.isSecureContext){const ms=$("micState");if(ms)ms.textContent="localhost-ல மட்டும்";return;}
+const r=new SR();r.lang="ta-IN";r.continuous=cont;r.interimResults=false;
+const ms=$("micState");if(ms)ms.textContent="🎧 Listening...";
+r.onresult=(e)=>{const t=e.results[e.results.length-1][0].transcript;cmd(t);};
+r.onerror=(e)=>{const ms=$("micState");if(ms)ms.textContent="⚠️ "+e.error;};
+r.onend=()=>{if(cont)startMic(true);else{const ms=$("micState");if(ms)ms.textContent="Listening...";}};
+try{r.start();}catch(e){}
+}
+const cpuHist=[],ramHist=[];
+function drawGraph(){const c=document.getElementById("graph");if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);x.strokeStyle="rgba(125,211,252,.15)";x.lineWidth=1;for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,c.height*i/4);x.lineTo(c.width,c.height*i/4);x.stroke();}function ln(h,col){if(h.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();h.forEach((v,i)=>{const px=(i/59)*c.width;const py=c.height-(v/100)*c.height;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}ln(cpuHist,"#7dd3fc");ln(ramHist,"#c084fc");}
+</script>
+fetch("/api/notes").then(r=>r.json()).then(d=>{
+const box=$("notesBox");if(!box)return;
+box.innerHTML="";
+(d.notes||[]).slice(-3).reverse().forEach(function(n,i){
+const div=document.createElement("div");div.className="act";
+div.innerHTML="<i>📝</i>"+String(n.text).replace(/[<>&]/g,"").slice(0,26);
+box.appendChild(div);
+});
+(d.todos||[]).map(function(t,idx){return {t:t,idx:idx};}).slice(-4).forEach(function(o){
+const div=document.createElement("div");div.className="act";div.style.cursor="pointer";
+div.innerHTML="<i>"+(o.t.done?"✅":"☐")+"</i>"+String(o.t.text).replace(/[<>&]/g,"").slice(0,24);
+div.onclick=function(){fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"toggle_todo",index:o.idx})}).then(loadNotes);};
+box.appendChild(div);
+});
+if(!(d.notes||[]).length && !(d.todos||[]).length) box.innerHTML="<div class='act'><i>📝</i>No notes yet</div>";
+}).catch(()=>{});
+}
+setInterval(loadNotes,5000);
+function addQuickNote(){
+const v=$("noteIn")?$("noteIn").value.trim():"";if(!v)return;$("noteIn").value="";
+const act=v.toLowerCase().startsWith("todo")?"add_todo":"add_note";
+const txt=act==="add_todo"?v.replace(/^todo[: ]*/i,""):v;
+fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:act,text:txt})}).then(loadNotes);
+}
+function toggleAuto(el){
+const k=el.getAttribute("data-key");
+const b=el.querySelector("b");
+const on=b.textContent==="ON";
+b.textContent=!on?"ON":"OFF";
+b.style.color=!on?"var(--grn)":"var(--mut)";
+fetch("/api/automation",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:k,value:!on})});
+}
+fetch("/api/automation").then(r=>r.json()).then(d=>{
+document.querySelectorAll(".auto-tgl").forEach(el=>{
+const k=el.getAttribute("data-key");
+const b=el.querySelector("b");
+b.textContent=d[k]?"ON":"OFF";
+b.style.color=d[k]?"var(--grn)":"var(--mut)";
+});
+}).catch(()=>{});
+async function cmd(t){
+const q=t||$("cin").value.trim();if(!q)return;$("cin").value="";
+try{
+const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:q})});
+const d=await r.json();
+const txt=String(d.reply||"Done");
+playTTS(txt);
+}catch(e){}
+}
+const cpuHist=[],ramHist=[];
+function drawGraph(){const c=document.getElementById("graph");if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);x.strokeStyle="rgba(125,211,252,.15)";x.lineWidth=1;for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,c.height*i/4);x.lineTo(c.width,c.height*i/4);x.stroke();}function ln(h,col){if(h.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();h.forEach((v,i)=>{const px=(i/59)*c.width;const py=c.height-(v/100)*c.height;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}ln(cpuHist,"#7dd3fc");ln(ramHist,"#c084fc");}
+function startMic(cont){
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){const ms=$("micState");if(ms)ms.textContent="Chrome மட்டும் தான்";return;}
+if(!window.isSecureContext){const ms=$("micState");if(ms)ms.textContent="localhost-ல மட்டும்";return;}
+const r=new SR();r.lang="ta-IN";r.continuous=cont;r.interimResults=false;
+const ms=$("micState");if(ms)ms.textContent="🎧 Listening...";
+r.onresult=(e)=>{const t=e.results[e.results.length-1][0].transcript;cmd(t);};
+r.onerror=(e)=>{const ms=$("micState");if(ms)ms.textContent="⚠️ "+e.error;};
+r.onend=()=>{if(cont)startMic(true);else{const ms=$("micState");if(ms)ms.textContent="Listening...";}};
+try{r.start();}catch(e){}
 }
 </script>
 </body>
@@ -2504,7 +2838,7 @@ def pwa_manifest():
     return jsonify({
         "name": "Vasanth AI",
         "short_name": "Vasanth AI",
-        "description": "AI assistant with genius brain + smart memory + SDXL gallery",
+        "description": "AI assistant with genius brain + smart memory + SDXL gallery + music player",
         "start_url": "/", "scope": "/", "display": "standalone",
         "background_color": "#0f0a1e", "theme_color": "#e879f9", "orientation": "portrait",
         "icons": [
@@ -2537,9 +2871,11 @@ def open_browser():
 if __name__ == "__main__":
     load_history()
     load_mood()
+    load_music()
     threading.Thread(target=reminder_checker_thread, daemon=True).start()
     threading.Thread(target=telegram_bot_thread, daemon=True).start()
     threading.Thread(target=proactive_thread, daemon=True).start()
+    threading.Thread(target=automation_thread, daemon=True).start()
     print("\n" + "=" * 60)
     print("    VASANTH AI - PREMIUM EDITION 💎 (FINAL)")
     print("=" * 60)
@@ -2550,11 +2886,9 @@ if __name__ == "__main__":
     print(f"Gemini:   {'🥇 NATURAL VOICE READY' if GEMINI_API_KEY else 'NOT SET (fallback)'}")
     print(f"HF Token: {'🎨 Image Backup READY' if HF_TOKEN.startswith('hf_') else 'NOT SET'}")
     print(f"Lameenc:  {'✅ MP3 encoder' if LAMEENC_READY else '❌ pip install lameenc'}")
-    print(f"Themes:   🎨 6 themes with auto title")
-    print(f"JARVIS:   🤖 /jarvis route READY")
-    print(f"Brain:    🧠 Genius Mode")
-    print(f"Memory:   🧠 Smart Memory")
-    print(f"Images:   🎨 4-Image Gallery + Lightbox")
+    print(f"Themes:   🎨 6 themes | 🎭 4 personalities | 🗣️ custom wake")
+    print(f"JARVIS:   🤖 /jarvis + AUTOMATION + MUSIC + LIVE GRAPHS")
+    print(f"Brain:    🧠 Genius Mode + Screen Vision")
     print(f"Voice:    🔊 Gemini + Google + Edge (multi-provider)")
     print("=" * 60 + "\n")
     threading.Thread(target=open_browser, daemon=True).start()
