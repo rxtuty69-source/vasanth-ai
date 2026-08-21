@@ -440,6 +440,7 @@ def api_music():
                 webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(q))
                 MUSIC_STATE["playing"] = True
                 MUSIC_STATE["title"] = q
+                track_event("songs")
             else:
                 MUSIC_STATE["playing"] = True
         elif act == "stop":
@@ -694,6 +695,7 @@ def take_screenshot():
             with mss.mss() as sct: sct.shot(output=path)
         with open(path, "rb") as f: b64 = base64.b64encode(f.read()).decode()
         print(f"📸 Screenshot saved: {path}")
+        track_event("shots")
         return f"data:image/png;base64,{b64}", path
     except Exception as e:
         print(f"Screenshot error: {e}")
@@ -1365,14 +1367,64 @@ def strip_img_token(text):
         return text.replace(m2.group(0), "").strip(), {"type": "single", "url": m2.group(1)}
     return text, None
 
-def process_command(original_text):
+def process_command(original_text, _skill_depth=0):
     global LAST_USER_ACTIVITY
     text = original_text.lower()
+    t = text
     LAST_USER_ACTIVITY = time.time()
     if not original_text: return "மச்சா 😅 ஏதாவது type பண்ணு."
     threading.Thread(target=extract_and_store_memories, args=(original_text,), daemon=True).start()
     threading.Thread(target=detect_emotion, args=(original_text,), daemon=True).start()
+    track_event("msgs")
+    if QUIZ_STATE.get("active"):
+        if t in ["quit quiz","stop quiz","exit quiz"]:
+            QUIZ_STATE["active"] = False
+            return "🧠 Quiz quit panniten macha! Verumana pesalam."
+        reply = answer_quiz(original_text)
+        add_to_memory("user", original_text); add_to_memory("model", "🧠 Quiz answer")
+        return reply
+    if t.startswith("quiz") or "quiz me" in t or "quiz:" in t:
+        topic = re.sub(r'\b(quiz|me|on|about|please|sollu)\b|:', '', t).strip() or "general knowledge"
+        reply = start_quiz(topic)
+        add_to_memory("user", original_text)
+        return reply
+    teach_m = re.search(r'teach\s*(?:me)?\s*:?\s*(?:when i say\s+)?(.+?)\s+(?:do|then|→|\|)\s+(.+)', original_text, re.IGNORECASE)
+    if teach_m:
+        trig = teach_m.group(1).strip().lower(); act = teach_m.group(2).strip()
+        if trig and act:
+            skills = load_skills()
+            skills = [s for s in skills if s["trigger"] != trig]
+            skills.append({"trigger": trig, "do": act})
+            save_skills(skills)
+            return f"🎓 Skill kathukitten macha! Inimel '**{trig}**' sonna → '**{act}**' pannuven!"
+    if t in ["show skills","my skills","skills"]:
+        skills = load_skills()
+        if not skills: return "Skills edhuvum illa macha 🎓\n\n**Try:** 'teach: when I say movie time do open youtube'"
+        return "🎓 **Learned Skills:**\n" + "\n".join([f"• '{s['trigger']}' → {s['do']}" for s in skills])
+    if t.startswith("forget skill"):
+        trig = t.replace("forget skill","").strip()
+        save_skills([s for s in load_skills() if s["trigger"] != trig])
+        return f"🗑️ Skill '{trig}' maranduten macha."
 
+    if "focus" in text and ("start" in text or "on" in text or "begin" in text):
+        FOCUS_TIMER = {"active": True, "end_time": time.time() + 1500, "duration": 1500, "mode": "work"}
+        return "⏱️ **Focus Timer Started!** 25 minutes deep work macha. Naan 25 mins la alert panren!"
+    if "break" in text and ("start" in text or "on" in text):
+        FOCUS_TIMER = {"active": True, "end_time": time.time() + 300, "duration": 300, "mode": "break"}
+        return "☕ **Break Timer Started!** 5 minutes relax macha. Thanni kudiyunga!"
+    if ("stop" in text or "cancel" in text) and "timer" in text:
+        FOCUS_TIMER["active"] = False
+        return "⏹️ Timer stop panniten macha!"
+    if "timer" in text and ("status" in text or "time" in text or "left" in text):
+        if FOCUS_TIMER["active"]:
+            rem = int(FOCUS_TIMER["end_time"] - time.time())
+            m, s = divmod(rem, 60)
+            return f"⏱️ **{FOCUS_TIMER['mode'].capitalize()} Timer** running macha! {m} mins {s} secs remaining."
+        return "Timer edhuvum run aagala macha. 'focus start' nu sollu!"
+    if text in ["daily report","report","daily report sollu","report sollu","daily summary"]:
+        reply = build_daily_report()
+        add_to_memory("user", original_text); add_to_memory("model", "📊 Daily report")
+        return reply 	
     if text in ["good morning","morning","briefing","kaalai vanakkam"]:
         reply = generate_morning_briefing(); add_to_memory("user", original_text); add_to_memory("model", reply); return reply
     if text in ["youtube","open youtube"]:
@@ -1389,6 +1441,33 @@ def process_command(original_text):
         data_url, info = take_screenshot()
         reply = f"Screenshot eduthuten macha! 📸 File: {info}" if data_url else f"Screenshot edukka mudiyala: {info}"
         add_to_memory("user", original_text); add_to_memory("model", reply); return reply
+    if QUIZ_STATE.get("active"):
+        if t in ["quit quiz","stop quiz","exit quiz"]:
+            QUIZ_STATE["active"] = False
+            return "🧠 Quiz quit panniten macha. Verumana pesalam!"
+        return answer_quiz(original_text)
+    if t.startswith("quiz") or "quiz me" in t or "quiz:" in t:
+        topic = re.sub(r'\b(quiz|me|on|about|please)\b|:', '', t).strip() or "general knowledge"
+        reply = start_quiz(topic)
+        add_to_memory("user", original_text)
+        return reply
+    teach_m = re.search(r'teach\s*(?:me)?\s*:?\s*(?:when i say\s+)?(.+?)\s+(?:do|then|→|\|)\s+(.+)', original_text, re.IGNORECASE)
+    if teach_m:
+        trig = teach_m.group(1).strip().lower(); act = teach_m.group(2).strip()
+        if trig and act:
+            skills = load_skills()
+            skills = [s for s in skills if s["trigger"] != trig]
+            skills.append({"trigger": trig, "do": act})
+            save_skills(skills)
+            return f"🎓 Skill kathukitten macha! Inimel '**{trig}**' sonna → '**{act}**' pannuven!"
+    if t in ["show skills","my skills","skills"]:
+        skills = load_skills()
+        if not skills: return "Skills edhuvum illa macha 🎓\n\n**Try:** 'teach: when I say movie time do open youtube'"
+        return "🎓 **Learned Skills:**\n" + "\n".join([f"• '{s['trigger']}' → {s['do']}" for s in skills])
+    if t.startswith("forget skill"):
+        trig = t.replace("forget skill","").strip()
+        save_skills([s for s in load_skills() if s["trigger"] != trig])
+        return f"🗑️ Skill '{trig}' maranduten macha."
     if ("screen" in text and "shot" not in text):
         reply = screen_vision(original_text)
         return reply
@@ -1416,9 +1495,19 @@ def process_command(original_text):
     if text in ["mouse position","where is mouse","mouse eng"]:
         reply = mouse_position(); add_to_memory("user", original_text); add_to_memory("model", reply); return reply
 
+    if _skill_depth < 2:
+        for s in load_skills():
+            if s.get("trigger") and s["trigger"] in t:
+                return process_command(s["do"], _skill_depth+1)
+
     yt_link = re.search(r'(https?://(?:www\.)?(?:youtube\.com|youtu\.be)[^\s]+)', original_text)
     if yt_link:
         reply = summarize_youtube(yt_link.group(1)); add_to_memory("user", original_text); add_to_memory("model", reply); return reply
+
+    if _skill_depth < 2:
+        for s in load_skills():
+            if s.get("trigger") and s["trigger"] in t:
+                return process_command(s["do"], _skill_depth+1)
 
     ai_reply = ask_groq(original_text)
     if not ai_reply:
@@ -1581,41 +1670,51 @@ HTML = r"""
 <link rel="icon" href="/logo.png" type="image/png">
 <link rel="apple-touch-icon" href="/logo.png">
 <style>
-:root{--bg:#0d0721;--card:rgba(28,14,58,.55);--line:rgba(232,121,249,.22);--pink:#e879f9;--violet:#8b5cf6;--pink2:#ec4899;--blue:#38bdf8;--txt:#f5f0ff;--mut:#a795c9;--glass:rgba(255,255,255,.05);}
+:root{--bg:#05060f;--card:rgba(13,17,35,.6);--line:rgba(34,211,238,.25);--pink:#22d3ee;--violet:#a78bfa;--pink2:#e879f9;--blue:#38bdf8;--txt:#eaf6ff;--mut:#8fa3c0;--glass:rgba(255,255,255,.05);}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;display:flex;justify-content:center;align-items:center;padding:20px;overflow-x:hidden;transition:background .5s;}
-.aurora{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
-.aurora i{position:absolute;width:50vw;height:50vw;border-radius:50%;filter:blur(110px);opacity:.28;animation:float 16s ease-in-out infinite;}
-.aurora i:nth-child(1){background:var(--pink);top:-15%;left:-12%;}
-.aurora i:nth-child(2){background:var(--violet);bottom:-18%;right:-10%;animation-delay:-6s;}
-.aurora i:nth-child(3){background:var(--pink2);top:35%;left:55%;animation-delay:-10s;}
-.aurora i:nth-child(4){background:var(--blue);top:60%;left:-15%;animation-delay:-13s;opacity:.15;}
-@keyframes float{0%,100%{transform:translate(0,0) scale(1);}50%{transform:translate(60px,-50px) scale(1.15);}}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:'Segoe UI',system-ui,Arial,"Noto Sans Tamil",sans-serif;display:flex;justify-content:center;align-items:center;padding:20px;overflow-x:hidden;}
+/* cyber grid floor */
+body::before{content:"";position:fixed;inset:auto 0 0 0;height:45vh;pointer-events:none;z-index:0;
+background:repeating-linear-gradient(90deg,rgba(34,211,238,.12) 0 1px,transparent 1px 60px),repeating-linear-gradient(0deg,rgba(232,121,249,.12) 0 1px,transparent 1px 46px);
+transform:perspective(600px) rotateX(58deg);transform-origin:top;animation:gridmove 2.2s linear infinite;
+mask-image:linear-gradient(180deg,transparent,#000 30%);}
+@keyframes gridmove{from{background-position:0 0,0 0}to{background-position:0 0,0 46px}}
+/* star glow */
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+background:radial-gradient(600px 300px at 15% 10%,rgba(34,211,238,.16),transparent),radial-gradient(700px 350px at 85% 15%,rgba(232,121,249,.16),transparent),radial-gradient(900px 500px at 50% 110%,rgba(56,189,248,.12),transparent);}
+.aurora{display:none;}
 #particles{position:fixed;inset:0;z-index:0;pointer-events:none;}
-.app{position:relative;z-index:1;width:min(1150px,100%);height:min(920px,94vh);min-height:600px;background:var(--card);border:1px solid var(--line);border-radius:30px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 90px rgba(139,92,246,.25),0 40px 100px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.08);backdrop-filter:blur(30px);}
-.header{padding:14px 22px;background:rgba(18,9,40,.5);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;}
+/* app shell with animated neon border */
+.app{position:relative;z-index:1;width:min(1150px,100%);height:min(920px,94vh);min-height:600px;background:var(--card);border-radius:26px;overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(26px);border:1px solid transparent;
+background:linear-gradient(var(--card),var(--card)) padding-box,linear-gradient(120deg,rgba(34,211,238,.6),rgba(232,121,249,.5),rgba(56,189,248,.6)) border-box;
+box-shadow:0 0 60px rgba(34,211,238,.15),0 30px 80px rgba(0,0,0,.6);animation:borderflow 6s linear infinite;}
+@keyframes borderflow{0%,100%{filter:hue-rotate(0deg)}50%{filter:hue-rotate(40deg)}}
+.header{padding:14px 22px;background:rgba(8,10,22,.6);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px;position:relative;overflow:hidden;}
+.header::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--pink),transparent);animation:scan 3s linear infinite;}
+@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .brand{display:flex;align-items:center;gap:13px;min-width:0;}
-.logo-img{width:48px;height:48px;border-radius:16px;object-fit:cover;border:2px solid rgba(232,121,249,.5);box-shadow:0 0 26px rgba(232,121,249,.55);flex:0 0 auto;animation:logoPulse 3s ease-in-out infinite;}
-body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95);animation:logoGlow .8s ease-in-out infinite;}
-@keyframes logoPulse{0%,100%{box-shadow:0 0 20px rgba(232,121,249,.4);}50%{box-shadow:0 0 36px rgba(236,72,153,.7);}}
-@keyframes logoGlow{0%,100%{transform:scale(1);}50%{transform:scale(1.07);}}
-.title{font-size:19px;font-weight:800;letter-spacing:.5px;background:linear-gradient(90deg,#f0abfc,#e879f9,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px;}
-.ver{font-size:9px;font-weight:700;color:#0d0721;background:linear-gradient(90deg,#f0abfc,#e879f9);padding:2px 7px;border-radius:6px;letter-spacing:1px;-webkit-text-fill-color:#0d0721;}
+.logo-img{width:48px;height:48px;border-radius:14px;object-fit:cover;border:2px solid var(--pink);box-shadow:0 0 22px rgba(34,211,238,.6);flex:0 0 auto;animation:logoPulse 3s ease-in-out infinite;}
+body.speaking .logo-img{box-shadow:0 0 44px rgba(232,121,249,.95);animation:logoGlow .8s ease-in-out infinite;}
+@keyframes logoPulse{0%,100%{box-shadow:0 0 16px rgba(34,211,238,.4)}50%{box-shadow:0 0 32px rgba(232,121,249,.7)}}
+@keyframes logoGlow{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+.title{font-size:19px;font-weight:800;letter-spacing:1px;background:linear-gradient(90deg,#67e8f9,#e879f9,#67e8f9);background-size:200% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:flex;align-items:center;gap:8px;animation:shine 4s linear infinite;}
+@keyframes shine{to{background-position:200% 0}}
+.ver{font-size:9px;font-weight:700;color:#041018;background:linear-gradient(90deg,#67e8f9,#e879f9);padding:2px 7px;border-radius:6px;letter-spacing:1px;-webkit-text-fill-color:#041018;}
 .online{display:inline-flex;align-items:center;gap:6px;color:#4ade80;font-size:11px;margin-top:2px;}
 .dot{width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 12px #22c55e;animation:pulse 1.8s infinite;}
-@keyframes pulse{50%{opacity:.4;transform:scale(.8);}}
+@keyframes pulse{50%{opacity:.4;transform:scale(.8)}}
 .mood-badge{font-size:15px;-webkit-text-fill-color:initial;}
 .settings-btn{width:42px;height:42px;border-radius:14px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:18px;cursor:pointer;transition:all .3s;display:grid;place-items:center;backdrop-filter:blur(10px);}
-.settings-btn:hover{background:rgba(232,121,249,.15);transform:rotate(90deg);}
-.settings-panel{max-height:0;overflow:hidden;transition:max-height .35s ease;background:rgba(18,9,40,.7);}
+.settings-btn:hover{background:rgba(34,211,238,.15);transform:rotate(90deg);}
+.settings-panel{max-height:0;overflow:hidden;transition:max-height .35s ease;background:rgba(8,10,22,.7);}
 .settings-panel.open{max-height:400px;border-bottom:1px solid var(--line);}
 .settings-grid{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;justify-content:center;}
 .small-btn{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 14px;border-radius:12px;cursor:pointer;font-size:12px;transition:all .2s;backdrop-filter:blur(8px);}
-.small-btn:hover{background:rgba(232,121,249,.14);transform:translateY(-1px);}
-.small-btn.active{background:rgba(232,121,249,.2);border-color:var(--pink);}
-.small-btn.live-on{background:rgba(236,72,153,.28);border-color:var(--pink2);color:#f0abfc;}
+.small-btn:hover{background:rgba(34,211,238,.14);transform:translateY(-1px);box-shadow:0 0 14px rgba(34,211,238,.3);}
+.small-btn.active{background:rgba(34,211,238,.18);border-color:var(--pink);}
+.small-btn.live-on{background:rgba(232,121,249,.25);border-color:var(--pink2);color:#f0abfc;}
 .voice-select{border:1px solid var(--line);background:var(--glass);color:var(--txt);padding:9px 12px;border-radius:12px;cursor:pointer;font-size:12px;outline:none;}
-.voice-select option{background:#1e1b4b;}
+.voice-select option{background:#0b1020;}
 .theme-row{display:flex;align-items:center;gap:8px;padding:2px 16px 14px;justify-content:center;flex-wrap:wrap;}
 .theme-label{font-size:11px;color:var(--mut);}
 .theme-dot{width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.3);cursor:pointer;transition:transform .2s,box-shadow .2s;}
@@ -1625,132 +1724,107 @@ body.speaking .logo-img{box-shadow:0 0 46px rgba(232,121,249,.95);animation:logo
 .message-row{display:flex;margin:16px 0;gap:10px;align-items:flex-start;animation:messageIn .35s cubic-bezier(.2,.9,.3,1.2);}
 .message-row.user-row{justify-content:flex-end;}
 .message-row.proactive-row{justify-content:center;}
-.message-row.proactive-row .message{background:rgba(236,72,153,.12);border:1px dashed rgba(236,72,153,.45);font-style:italic;max-width:70%;}
-@keyframes messageIn{from{opacity:0;transform:translateY(14px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}
+.message-row.proactive-row .message{background:rgba(232,121,249,.12);border:1px dashed rgba(232,121,249,.45);font-style:italic;max-width:70%;}
+@keyframes messageIn{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
 .avatar{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-size:16px;flex:0 0 auto;margin-top:2px;overflow:hidden;}
-.avatar.ai{background:linear-gradient(135deg,var(--pink),var(--violet));box-shadow:0 0 18px rgba(139,92,246,.5);}
+.avatar.ai{background:linear-gradient(135deg,var(--pink),var(--violet));box-shadow:0 0 18px rgba(34,211,238,.5);}
 .avatar.user{background:linear-gradient(135deg,#be185d,var(--pink2));}
 .avatar img{width:100%;height:100%;object-fit:cover;}
-.message{max-width:min(75%,740px);padding:14px 18px;border-radius:20px;line-height:1.65;word-wrap:break-word;backdrop-filter:blur(12px);}
+.message{max-width:min(75%,740px);padding:14px 18px;border-radius:18px;line-height:1.65;word-wrap:break-word;backdrop-filter:blur(12px);}
 .message .msg-text{white-space:pre-wrap;}
-.message .msg-text b{color:#f5d0fe;}
-.message .msg-text code{background:rgba(232,121,249,.14);border:1px solid rgba(232,121,249,.35);padding:1px 6px;border-radius:6px;font-family:Consolas,monospace;font-size:.9em;color:#f0abfc;}
+.message .msg-text b{color:#a5f3fc;}
+.message .msg-text code{background:rgba(34,211,238,.14);border:1px solid rgba(34,211,238,.35);padding:1px 6px;border-radius:6px;font-family:Consolas,monospace;font-size:.9em;color:#67e8f9;}
 .message img.msg-img{max-width:260px;border-radius:14px;margin-top:8px;display:block;border:1px solid var(--line);cursor:pointer;}
-.ai{background:rgba(255,255,255,.07);border:1px solid rgba(167,139,250,.28);border-top-left-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.3);}
-.user{background:linear-gradient(135deg,var(--pink2),var(--violet));border-top-right-radius:6px;box-shadow:0 8px 30px rgba(168,85,247,.45);}
+.ai{background:rgba(13,20,40,.55);border:1px solid rgba(34,211,238,.3);border-top-left-radius:4px;box-shadow:0 0 22px rgba(34,211,238,.12),inset 0 0 30px rgba(34,211,238,.04);}
+.user{background:linear-gradient(135deg,rgba(232,121,249,.85),rgba(56,189,248,.85));border-top-right-radius:4px;box-shadow:0 0 26px rgba(232,121,249,.35);}
 .meta{font-size:10px;opacity:.55;margin-top:7px;display:flex;align-items:center;gap:6px;}
-.brain-badge{display:inline-block;padding:1px 8px;border-radius:10px;background:rgba(232,121,249,.16);border:1px solid rgba(232,121,249,.38);font-size:10px;color:#f0abfc;}
+.brain-badge{display:inline-block;padding:1px 8px;border-radius:10px;background:rgba(34,211,238,.16);border:1px solid rgba(34,211,238,.38);font-size:10px;color:#67e8f9;}
 .copy-btn{cursor:pointer;opacity:.6;margin-left:auto;}
-.thinking{display:flex;align-items:center;gap:7px;color:#f5d0fe;font-style:italic;}
+.thinking{display:flex;align-items:center;gap:7px;color:#a5f3fc;font-style:italic;}
 .thinking span{width:7px;height:7px;border-radius:50%;background:var(--pink);animation:bounce 1.1s infinite;}
-.thinking span:nth-child(2){animation-delay:.15s;}.thinking span:nth-child(3){animation-delay:.3s;}
-@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4;}30%{transform:translateY(-6px);opacity:1;}}
+.thinking span:nth-child(2){animation-delay:.15s}.thinking span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-6px);opacity:1}}
 .gallery-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px;max-width:440px;}
 .gallery-item{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--line);cursor:pointer;aspect-ratio:1;background:rgba(0,0,0,.35);transition:all .3s;}
-.gallery-item:hover{transform:scale(1.03);box-shadow:0 0 26px rgba(232,121,249,.45);}
+.gallery-item:hover{transform:scale(1.03);box-shadow:0 0 26px rgba(34,211,238,.45);}
 .gallery-item img{width:100%;height:100%;object-fit:cover;display:block;}
 .gallery-item .gi-overlay{position:absolute;inset:0;background:linear-gradient(transparent 60%,rgba(0,0,0,.6));opacity:0;transition:opacity .3s;display:flex;align-items:flex-end;justify-content:center;padding:8px;}
 .gallery-item:hover .gi-overlay{opacity:1;}
 .gi-overlay span{color:#fff;font-size:18px;}
 .img-loading{display:flex;align-items:center;justify-content:center;height:100%;color:var(--mut);font-size:11px;animation:pulse 1.5s infinite;}
-.lightbox{position:fixed;inset:0;background:rgba(5,2,12,.93);backdrop-filter:blur(12px);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:20px;}
+.lightbox{position:fixed;inset:0;background:rgba(3,4,10,.93);backdrop-filter:blur(12px);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px;padding:20px;}
 .lightbox.show{display:flex;}
-.lightbox img{max-width:90vw;max-height:72vh;border-radius:18px;box-shadow:0 0 70px rgba(232,121,249,.45);border:1px solid var(--line);}
+.lightbox img{max-width:90vw;max-height:72vh;border-radius:18px;box-shadow:0 0 70px rgba(34,211,238,.45);border:1px solid var(--line);}
 .lightbox-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
 .lb-btn{padding:11px 22px;border-radius:14px;border:1px solid var(--line);background:var(--glass);color:var(--txt);cursor:pointer;font-size:13px;transition:all .2s;backdrop-filter:blur(10px);text-decoration:none;}
-.lb-btn:hover{background:rgba(232,121,249,.2);transform:translateY(-2px);}
+.lb-btn:hover{background:rgba(34,211,238,.2);transform:translateY(-2px);}
 .lb-close{position:absolute;top:20px;right:20px;width:46px;height:46px;border-radius:50%;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:20px;cursor:pointer;display:grid;place-items:center;}
-.bottom{padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:rgba(18,9,40,.7);border-top:1px solid var(--line);}
+.bottom{padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:rgba(8,10,22,.7);border-top:1px solid var(--line);}
 .status-row{display:flex;align-items:center;gap:10px;margin:0 4px 10px;flex-wrap:wrap;}
 .voice-status{min-height:18px;color:#4ade80;font-size:12px;flex:1;min-width:150px;}
 #waveform{display:none;align-items:center;gap:3px;height:20px;cursor:pointer;}
 body.speaking #waveform{display:flex;}
 #waveform span{width:4px;height:18px;background:linear-gradient(180deg,var(--pink),var(--violet));border-radius:2px;animation:wv .9s infinite ease-in-out;}
-#waveform span:nth-child(2){animation-delay:.15s;}#waveform span:nth-child(3){animation-delay:.3s;}#waveform span:nth-child(4){animation-delay:.45s;}#waveform span:nth-child(5){animation-delay:.6s;}
-@keyframes wv{0%,100%{transform:scaleY(.25);}50%{transform:scaleY(1);}}
+#waveform span:nth-child(2){animation-delay:.15s}#waveform span:nth-child(3){animation-delay:.3s}#waveform span:nth-child(4){animation-delay:.45s}#waveform span:nth-child(5){animation-delay:.6s}
+@keyframes wv{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
 .quick-actions{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .quick-btn{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);color:var(--txt);font-size:11px;cursor:pointer;transition:all .2s;backdrop-filter:blur(8px);}
-.quick-btn:hover{background:rgba(232,121,249,.16);transform:translateY(-1px);border-color:var(--pink);}
+.quick-btn:hover{background:rgba(34,211,238,.16);transform:translateY(-1px);border-color:var(--pink);box-shadow:0 0 14px rgba(34,211,238,.3);}
 .composer{display:flex;gap:8px;align-items:center;}
-input{flex:1;min-width:0;padding:14px 18px;border:1px solid var(--line);border-radius:999px;outline:none;background:rgba(13,7,33,.6);color:#fff;font-size:14px;transition:all .3s;backdrop-filter:blur(10px);}
-input:focus{border-color:rgba(232,121,249,.65);box-shadow:0 0 28px rgba(232,121,249,.2);}
+input{flex:1;min-width:0;padding:14px 18px;border:1px solid var(--line);border-radius:999px;outline:none;background:rgba(8,10,22,.6);color:#fff;font-size:14px;transition:all .3s;backdrop-filter:blur(10px);}
+input:focus{border-color:rgba(34,211,238,.65);box-shadow:0 0 28px rgba(34,211,238,.25);}
 input::placeholder{color:var(--mut);}
 .action-btn{width:48px;height:48px;border:none;border-radius:16px;cursor:pointer;font-size:19px;color:white;transition:all .2s;flex:0 0 auto;}
 .action-btn:hover{transform:translateY(-2px) scale(1.05);}
 .mic{background:linear-gradient(135deg,#16a34a,#059669);}
 .cam{background:linear-gradient(135deg,#f59e0b,#d97706);}
 .scr{background:linear-gradient(135deg,var(--violet),#6d28d9);}
-.send{background:linear-gradient(135deg,var(--pink),var(--pink2),var(--violet));}
+.send{background:linear-gradient(135deg,var(--pink),var(--blue));box-shadow:0 0 18px rgba(34,211,238,.4);}
 .fab{display:none;width:48px;height:48px;border:none;border-radius:16px;background:linear-gradient(135deg,var(--pink),var(--pink2));color:#fff;font-size:20px;cursor:pointer;transition:transform .3s;flex:0 0 auto;}
 .fab.spin{transform:rotate(45deg);}
 .footer-note{margin-top:8px;text-align:center;color:var(--mut);font-size:9px;letter-spacing:1px;}
-.sheet-backdrop{position:fixed;inset:0;background:rgba(5,2,12,.65);backdrop-filter:blur(5px);opacity:0;pointer-events:none;transition:opacity .3s;z-index:90;}
+.sheet-backdrop{position:fixed;inset:0;background:rgba(3,4,10,.65);backdrop-filter:blur(5px);opacity:0;pointer-events:none;transition:opacity .3s;z-index:90;}
 .sheet-backdrop.show{opacity:1;pointer-events:auto;}
-.sheet{position:fixed;left:50%;transform:translate(-50%,105%);bottom:0;width:min(560px,100%);background:rgba(28,14,58,.97);border:1px solid var(--line);border-bottom:none;border-radius:28px 28px 0 0;padding:14px 18px calc(20px + env(safe-area-inset-bottom));transition:transform .35s cubic-bezier(.2,.9,.3,1.1);z-index:95;box-shadow:0 -20px 70px rgba(139,92,246,.3);}
+.sheet{position:fixed;left:50%;transform:translate(-50%,105%);bottom:0;width:min(560px,100%);background:rgba(13,17,35,.97);border:1px solid var(--line);border-bottom:none;border-radius:28px 28px 0 0;padding:14px 18px calc(20px + env(safe-area-inset-bottom));transition:transform .35s cubic-bezier(.2,.9,.3,1.1);z-index:95;box-shadow:0 -20px 70px rgba(34,211,238,.25);}
 .sheet.open{transform:translate(-50%,0);}
-.sheet-handle{width:44px;height:5px;border-radius:99px;background:rgba(232,121,249,.4);margin:0 auto 12px;}
+.sheet-handle{width:44px;height:5px;border-radius:99px;background:rgba(34,211,238,.4);margin:0 auto 12px;}
 .sheet-title{font-size:12px;letter-spacing:2px;color:var(--mut);text-transform:uppercase;margin-bottom:12px;text-align:center;}
 .sheet-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
 .tile{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 8px;border-radius:18px;border:1px solid var(--line);background:var(--glass);cursor:pointer;transition:all .2s;color:var(--txt);}
 .tile:active{transform:scale(.94);}
 .tile .ti{font-size:24px;}
 .tile .tl{font-size:11px;font-weight:600;}
-.tile:hover{background:rgba(232,121,249,.14);border-color:var(--pink);}
-.wake-word-indicator{position:fixed;top:20px;right:20px;display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(232,121,249,.16);border:1px solid rgba(232,121,249,.4);border-radius:30px;backdrop-filter:blur(10px);opacity:0;transform:translateY(-20px);transition:all .3s ease;z-index:1000;}
+.tile:hover{background:rgba(34,211,238,.14);border-color:var(--pink);}
+.wake-word-indicator{position:fixed;top:20px;right:20px;display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(34,211,238,.16);border:1px solid rgba(34,211,238,.4);border-radius:30px;backdrop-filter:blur(10px);opacity:0;transform:translateY(-20px);transition:all .3s ease;z-index:1000;}
 .wake-word-indicator.active{opacity:1;transform:translateY(0);}
 .wake-word-indicator.listening{background:rgba(34,197,94,.2);border-color:rgba(34,197,94,.5);}
-.wake-word-indicator.speaking{background:rgba(236,72,153,.28);border-color:rgba(236,72,153,.55);}
+.wake-word-indicator.speaking{background:rgba(232,121,249,.28);border-color:rgba(232,121,249,.55);}
 .wake-word-orb{width:14px;height:14px;border-radius:50%;background:var(--pink);animation:orbPulse 1.5s ease-in-out infinite;}
 .wake-word-indicator.listening .wake-word-orb{background:#22c55e;}
 .wake-word-indicator.speaking .wake-word-orb{background:#f0abfc;}
-@keyframes orbPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.3);}}
+@keyframes orbPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
 .wake-word-text{color:#fff;font-size:12px;font-weight:600;}
+/* themes */
 body[data-theme="ocean"]{--bg:#03102b;--card:rgba(4,26,56,.6);--line:rgba(56,189,248,.25);--pink:#22d3ee;--violet:#3b82f6;--pink2:#2dd4bf;--blue:#60a5fa;--txt:#eaf7ff;--mut:#8fb3d1;}
-body[data-theme="ocean"] .title{background-image:linear-gradient(90deg,#a5f3fc,#22d3ee,#60a5fa);}
-body[data-theme="ocean"] .ver{background:linear-gradient(90deg,#a5f3fc,#22d3ee);}
-body[data-theme="ocean"] .logo-img{border-color:rgba(34,211,238,.55);box-shadow:0 0 26px rgba(34,211,238,.5);}
 body[data-theme="ocean"] .message .msg-text b{color:#bae6fd;}
-body[data-theme="ocean"] .avatar.user{background:linear-gradient(135deg,#0369a1,#2dd4bf);}
-body[data-theme="ocean"] .ai{border-color:rgba(59,130,246,.3);}
 body[data-theme="sunset"]{--bg:#170a12;--card:rgba(46,16,28,.6);--line:rgba(251,146,60,.28);--pink:#fb923c;--violet:#f472b6;--pink2:#f97316;--blue:#fbbf24;--txt:#fff3e8;--mut:#cfa093;}
-body[data-theme="sunset"] .title{background-image:linear-gradient(90deg,#fed7aa,#fb923c,#f472b6);}
-body[data-theme="sunset"] .ver{background:linear-gradient(90deg,#fed7aa,#fb923c);}
-body[data-theme="sunset"] .logo-img{border-color:rgba(251,146,60,.55);box-shadow:0 0 26px rgba(251,146,60,.5);}
 body[data-theme="sunset"] .message .msg-text b{color:#ffedd5;}
-body[data-theme="sunset"] .avatar.user{background:linear-gradient(135deg,#9a3412,#f472b6);}
-body[data-theme="sunset"] .ai{border-color:rgba(244,114,182,.3);}
 body[data-theme="mint"]{--bg:#041712;--card:rgba(6,40,32,.6);--line:rgba(52,211,153,.25);--pink:#34d399;--violet:#059669;--pink2:#2dd4bf;--blue:#4ade80;--txt:#eafff5;--mut:#93c2ae;}
-body[data-theme="mint"] .title{background-image:linear-gradient(90deg,#a7f3d0,#34d399,#4ade80);}
-body[data-theme="mint"] .ver{background:linear-gradient(90deg,#a7f3d0,#34d399);}
-body[data-theme="mint"] .logo-img{border-color:rgba(52,211,153,.55);box-shadow:0 0 26px rgba(52,211,153,.5);}
 body[data-theme="mint"] .message .msg-text b{color:#d1fae5;}
-body[data-theme="mint"] .avatar.user{background:linear-gradient(135deg,#065f46,#2dd4bf);}
-body[data-theme="mint"] .ai{border-color:rgba(16,185,129,.3);}
 body[data-theme="stealth"]{--bg:#0e1116;--card:rgba(20,24,32,.7);--line:rgba(59,130,246,.25);--pink:#3b82f6;--violet:#2563eb;--pink2:#06b6d4;--blue:#3b82f6;--txt:#e8ecf4;--mut:#98a2b3;}
-body[data-theme="stealth"] .title{background-image:linear-gradient(90deg,#93c5fd,#3b82f6,#06b6d4);}
-body[data-theme="stealth"] .ver{background:linear-gradient(90deg,#93c5fd,#3b82f6);}
-body[data-theme="stealth"] .logo-img{border-color:rgba(59,130,246,.55);box-shadow:0 0 26px rgba(59,130,246,.5);}
 body[data-theme="stealth"] .message .msg-text b{color:#bfdbfe;}
-body[data-theme="stealth"] .avatar.user{background:linear-gradient(135deg,#1d4ed8,#06b6d4);}
-body[data-theme="stealth"] .ai{border-color:rgba(37,99,235,.35);}
 body[data-theme="ivory"]{--bg:#eef1f8;--card:rgba(255,255,255,.85);--line:rgba(99,102,241,.25);--pink:#6366f1;--violet:#8b5cf6;--pink2:#ec4899;--blue:#06b6d4;--txt:#232a3a;--mut:#69718a;--glass:rgba(255,255,255,.7);}
-body[data-theme="ivory"] .title{background-image:linear-gradient(90deg,#4f46e5,#7c3aed,#db2777);}
-body[data-theme="ivory"] .ver{background:linear-gradient(90deg,#818cf8,#6366f1);}
-body[data-theme="ivory"] .logo-img{border-color:rgba(99,102,241,.5);box-shadow:0 0 22px rgba(99,102,241,.35);}
-body[data-theme="ivory"] .ai{background:rgba(255,255,255,.92);border-color:rgba(99,102,241,.25);box-shadow:0 8px 24px rgba(99,102,241,.12);}
 body[data-theme="ivory"] .message .msg-text b{color:#4338ca;}
-body[data-theme="ivory"] .message .msg-text code{color:#6d28d9;background:rgba(139,92,246,.08);}
 body[data-theme="ivory"] input{background:#fff;color:#232a3a;}
 body[data-theme="ivory"] .small-btn,body[data-theme="ivory"] .settings-btn,body[data-theme="ivory"] .quick-btn,body[data-theme="ivory"] .voice-select{background:#fff;color:#3a4156;}
-body[data-theme="ivory"] .voice-select option{background:#fff;}
 body[data-theme="ivory"] .sheet{background:#fdfdff;}
 body[data-theme="ivory"] .tile{background:#f2f3fa;color:#232a3a;}
 body[data-theme="ivory"] .online,body[data-theme="ivory"] .voice-status{color:#059669;}
-body[data-theme="ivory"] .avatar.user{background:linear-gradient(135deg,#4f46e5,#06b6d4);}
-body[data-theme="ivory"] .theme-dot{border-color:rgba(0,0,0,.2);}
+/* mobile */
 @media (max-width:700px){
 body{padding:0;}
-.app{width:100%;height:100vh;height:100dvh;min-height:0;border-radius:0;border:none;}
+body::before{height:30vh;}
+.app{width:100%;height:100vh;height:100dvh;min-height:0;border-radius:0;}
 .header{padding:10px 14px;}
 .logo-img{width:40px;height:40px;border-radius:13px;}
 .title{font-size:16px;}
@@ -1806,6 +1880,7 @@ input{font-size:14px;padding:13px 16px;}
 </select>
 <button class="small-btn" onclick="setCustomWake()">🗣️ Wake Word</button>
 <button class="small-btn" onclick="clearChat()">🗑️ Clear</button>
+<button class="small-btn" onclick="aiTheme()">🎨 AI Theme</button>
 <button class="small-btn" onclick="window.open('/api/export')">💾 Export</button>
 <button class="small-btn" onclick="window.open('/jarvis','_blank')">🤖 JARVIS Mode</button>
 </div>
@@ -1835,6 +1910,9 @@ input{font-size:14px;padding:13px 16px;}
 <button class="quick-btn" onclick="quickSend('Play AR Rahman songs')">🎵 Music</button>
 <button class="quick-btn" onclick="quickSend('Screen paaru')">👁 Screen</button>
 <button class="quick-btn" onclick="quickSend('Story about a brave kid')">📖 Story</button>
+<button class="quick-btn" onclick="quickSend('Quiz me on general knowledge')">🧠 Quiz</button>
+<button class="quick-btn" onclick="quickSend('show skills')">🎓 Skills</button>
+<button class="quick-btn" onclick="quickSend('daily report')">📊 Report</button>
 </div>
 <div class="composer">
 <input id="message" type="text" placeholder="Say 'Macha' or type..." autocomplete="off">
@@ -1905,11 +1983,33 @@ fetch(voiceEnabled?"/voice/on":"/voice/off",{method:"POST"});
 setVoiceStatus(voiceEnabled?"🔊 Voice ON":"🔇 Voice OFF (text only)");
 }
 function applyTheme(t,label){
+["--bg","--card","--line","--pink","--violet","--pink2","--blue","--txt","--mut","--glass"].forEach(k=>document.body.style.removeProperty(k));
 document.body.setAttribute("data-theme",t);
 localStorage.setItem("vaTheme",t);
 document.getElementById("verBadge").textContent=label;
 document.querySelectorAll(".theme-dot").forEach(d=>{ d.classList.toggle("active",d.getAttribute("data-theme")===t); });
 setVoiceStatus("🎨 Theme: "+label);
+}
+function applyCustomTheme(c,name){
+const map={"--bg":c.bg,"--card":c.card,"--line":c.line,"--pink":c.pink,"--violet":c.violet,"--pink2":c.pink2,"--blue":c.blue,"--txt":c.txt,"--mut":c.mut,"--glass":c.glass};
+for(const k in map){ if(map[k]) document.body.style.setProperty(k,map[k]); }
+document.body.setAttribute("data-theme","custom");
+localStorage.setItem("vaTheme","custom");
+localStorage.setItem("vaCustomTheme",JSON.stringify(c));
+document.getElementById("verBadge").textContent=(name||"CUSTOM").toUpperCase().slice(0,10);
+document.querySelectorAll(".theme-dot").forEach(d=>d.classList.remove("active"));
+}
+function aiTheme(){
+const desc=prompt("🎨 Describe your dream theme:\n(e.g. 'golden desert', 'toxic jungle', 'blood moon', 'emerald forest')");
+if(!desc)return;
+setVoiceStatus("🎨 AI theme generate pannuren...");
+fetch("/api/theme",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({desc:desc})})
+.then(r=>r.json()).then(d=>{
+if(!d.success){setVoiceStatus("⚠️ Theme generate aagala");return;}
+applyCustomTheme(d.colors,desc);
+setVoiceStatus("🎨 Ready: "+desc);
+if(voiceEnabled)playTTS("Ungalukkaana custom theme ready macha!");
+}).catch(()=>setVoiceStatus("⚠️ Error"));
 }
 let gestureOn=false;
 function toggleGesture(){
@@ -1941,9 +2041,13 @@ pollMood();
 (function(){const b=document.getElementById("voiceOnOffBtn");if(b){b.textContent=voiceEnabled?"🔊 Voice: ON":"🔇 Voice: OFF";b.classList.toggle("active",voiceEnabled);}})();
 (function(){
 const t=localStorage.getItem("vaTheme")||"royal";
+if(t==="custom"){
+try{applyCustomTheme(JSON.parse(localStorage.getItem("vaCustomTheme")||"{}"),"CUSTOM");}catch(e){}
+}else{
 document.body.setAttribute("data-theme",t);
 document.getElementById("verBadge").textContent=THEME_LABELS[t]||"ROYAL";
 document.querySelectorAll(".theme-dot").forEach(d=>{ d.classList.toggle("active",d.getAttribute("data-theme")===t); });
+}
 })();
 </script>
 <script>
@@ -2137,21 +2241,10 @@ function pickImage(){toggleSheet(false);document.getElementById("imageInput").cl
 async function onImagePicked(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=async function(){const dataURL=reader.result;const q=input.value.trim()||"Idhula enna iruku?";busy=true;stopWake();addMessage("📷 "+q,"user",null,dataURL);input.value="";addThinking();try{const r=await fetch("/vision",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image:dataURL,question:q})});const d=await r.json();removeThinking();addMessage(d.reply,"ai",null,null,true,d.brain||"");if(voiceEnabled){await playTTS(d.reply);}finishCycle();}catch(err){removeThinking();addMessage("Vision error","ai");finishCycle();}};reader.readAsDataURL(file);e.target.value="";}
 function detectWake(t){t=t.toLowerCase().trim();for(const p of WAKE_PATTERNS){const m=p.exec(t);if(m)return t.slice(m.index+m[0].length).trim();}return null;}
 function stopWake(){if(wakeRecognition){try{wakeRecognition.onend=null;wakeRecognition.onerror=null;wakeRecognition.stop();}catch(e){}wakeRecognition=null;}wakeActive=false;}
-function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "'+(customWake||"Macha")+'"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;console.log("🎤 wake heard:",t);const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{setVoiceStatus("🗣️ Sollu macha...");if(voiceEnabled){playTTS("Sollu macha! Enna sollanum?").then(()=>startCommandRecognition());}else{startCommandRecognition();}}}};wakeRecognition.onerror=(e)=>{console.log("wake error:",e.error);setVoiceStatus("🎤 Mic: "+e.error);};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
+function startWake(){if(!wakeWordEnabled||busy||wakeActive||liveMode)return;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){setVoiceStatus("⚠️ Wake-க்கு Chrome வேணும்");return;}if(!window.isSecureContext){setVoiceStatus("🔒 Wake localhost-ல மட்டும்");return;}try{wakeRecognition=new SR();}catch(e){return;}wakeRecognition.lang="ta-IN";wakeRecognition.continuous=true;wakeRecognition.interimResults=true;wakeRecognition.onstart=()=>{wakeActive=true;showIndicator("active",'Listening "'+(customWake||"Macha")+'"...');};wakeRecognition.onresult=(e)=>{if(busy)return;let t="";for(let i=e.resultIndex;i<e.results.length;i++)t+=e.results[i][0].transcript;if(!t)return;console.log("🎤 wake heard:",t);const a=detectWake(t);if(a!==null){playWakeBeep();stopWake();busy=true;if(a.length>=2){input.value=a;sendMessage();}else{setVoiceStatus("🗣️ Sollu macha...");if(voiceEnabled){playTTS("Sollu macha! Enna sollanum?").then(()=>startCommandRecognition());}else{startCommandRecognition();}}}};wakeRecognition.onerror=(e)=>{console.log("wake error:",e.error);setVoiceStatus("🎤 Mic: "+e.error);};wakeRecognition.onend=()=>{wakeActive=false;if(wakeWordEnabled&&!busy&&!liveMode)setTimeout(startWake,500);};try{wakeRecognition.start();}catch(e){}}
 function startCommandRecognition(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){finishCycle();return;}commandRecognition=new SR();commandRecognition.lang="ta-IN";commandRecognition.continuous=false;commandRecognition.interimResults=false;let got=false;commandRecognition.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};commandRecognition.onend=()=>{if(!got)finishCycle();};setTimeout(()=>{try{commandRecognition.start();}catch(e){finishCycle();}},400);}
 function toggleWakeWord(){wakeWordEnabled=!wakeWordEnabled;const b=document.getElementById("wakeBtn");if(wakeWordEnabled){b.textContent="🎙️ Wake: ON";b.classList.add("active");startWake();}else{b.textContent="🎙️ Wake: OFF";b.classList.remove("active");stopWake();busy=false;showIndicator("","");}}
-function startVoice(){
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(!SR){setVoiceStatus("⚠️ Chrome use பண்ணுங்க");return;}
-if(!window.isSecureContext){setVoiceStatus("🔒 Mic localhost-ல மட்டும் தான்");return;}
-busy=true;stopWake();
-const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;
-setVoiceStatus("🎤 Speaking...");
-r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};
-r.onerror=(e)=>{setVoiceStatus(e.error==="not-allowed"?"🚫 Mic Allow பண்ணுங்க":e.error==="no-speech"?"🤫 மறுபடி பேசு":"⚠️ Mic: "+e.error);};
-r.onend=()=>{if(!got)finishCycle();};
-try{r.start();}catch(e){finishCycle();}
-}
+function startVoice(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){setVoiceStatus("⚠️ Chrome use பண்ணுங்க");return;}if(!window.isSecureContext){setVoiceStatus("🔒 Mic localhost-ல மட்டும் தான்");return;}busy=true;stopWake();const r=new SR();r.lang="ta-IN";r.continuous=false;r.interimResults=false;let got=false;setVoiceStatus("🎤 Speaking...");r.onresult=(e)=>{got=true;input.value=e.results[0][0].transcript;sendMessage();};r.onerror=(e)=>{setVoiceStatus(e.error==="not-allowed"?"🚫 Mic Allow பண்ணுங்க":e.error==="no-speech"?"🤫 மறுபடி பேசு":"⚠️ Mic: "+e.error);};r.onend=()=>{if(!got)finishCycle();};try{r.start();}catch(e){finishCycle();}}
 let deferredPrompt=null;
 window.addEventListener("beforeinstallprompt",(e)=>{e.preventDefault();deferredPrompt=e;const b=document.getElementById("installBtn");if(b)b.style.display="inline-block";});
 function installApp(){if(!deferredPrompt)return;deferredPrompt.prompt();deferredPrompt.userChoice.then(r=>{if(r.outcome==="accepted")document.getElementById("installBtn").style.display="none";deferredPrompt=null;});}
@@ -2185,6 +2278,7 @@ def api_notes():
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         act = data.get("action")
+        if act in ("add_note","add_todo"): track_event("notes")
         if act == "add_note":
             d["notes"].append({"text": data.get("text",""), "time": time.time()})
         elif act == "add_todo":
@@ -2227,6 +2321,178 @@ Return ONLY valid JSON like:
     except Exception as e:
         print(f"Story error: {e}")
         return "Story generate panna mudiyala macha 😅 Thirumba try pannu!"
+
+SKILLS_FILE = os.path.join(DATA_DIR, "skills.json")
+
+def load_skills():
+    try:
+        if os.path.exists(SKILLS_FILE):
+            with open(SKILLS_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    except: pass
+    return []
+
+def save_skills(s):
+    try:
+        with open(SKILLS_FILE, "w", encoding="utf-8") as f: json.dump(s, f, ensure_ascii=False, indent=2)
+    except: pass
+
+@app.route("/api/skills", methods=["GET","POST"])
+def api_skills():
+    skills = load_skills()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        act = data.get("action")
+        if act == "add":
+            t = (data.get("trigger") or "").strip().lower()
+            a = (data.get("do") or "").strip()
+            if t and a:
+                skills = [s for s in skills if s["trigger"] != t]
+                skills.append({"trigger": t, "do": a})
+                save_skills(skills)
+        elif act == "del":
+            t = (data.get("trigger") or "").strip().lower()
+            skills = [s for s in skills if s["trigger"] != t]
+            save_skills(skills)
+        return jsonify({"success": True, "skills": skills})
+    return jsonify({"skills": skills})
+
+QUIZ_STATE = {"active": False, "questions": [], "index": 0, "score": 0, "topic": ""}
+
+def start_quiz(topic):
+    global QUIZ_STATE
+    try:
+        prompt = f"""Create a 5-question multiple choice quiz about: {topic}
+Return ONLY valid JSON array like:
+[{{"q":"question?","options":["opt1","opt2","opt3","opt4"],"answer":0}}]
+answer = index of correct option (0-3). Fun, medium difficulty."""
+        messages = [{"role":"system","content":"You are a quiz master. Return ONLY valid JSON array."},{"role":"user","content":prompt}]
+        reply = _groq_complete(messages)
+        m = re.search(r'\[.*\]', reply or "", re.DOTALL)
+        qs = json.loads(m.group(0))
+        if not isinstance(qs, list) or len(qs) < 1: raise Exception("bad quiz")
+        QUIZ_STATE = {"active": True, "questions": qs[:5], "index": 0, "score": 0, "topic": topic}
+        return quiz_question_text()
+    except Exception as e:
+        print(f"Quiz error: {e}")
+        return "Quiz generate panna mudiyala macha 😅 Thirumba try pannu!"
+
+def quiz_question_text():
+    q = QUIZ_STATE["questions"][QUIZ_STATE["index"]]
+    out = f"🧠 **QUIZ ({QUIZ_STATE['index']+1}/{len(QUIZ_STATE['questions'])})** — Topic: **{QUIZ_STATE['topic']}**\n\n**{q['q']}**\n"
+    for i, o in enumerate(q.get("options", [])):
+        out += f"\n**{i+1}** • {o}"
+    out += "\n\n👉 Answer sollu macha! (1-4) • 'quit quiz' = exit"
+    return out
+
+def answer_quiz(ans_text):
+    global QUIZ_STATE
+    q = QUIZ_STATE["questions"][QUIZ_STATE["index"]]
+    correct = int(q.get("answer", 0))
+    t = ans_text.strip().lower()
+    chosen = -1
+    if t in ["1","2","3","4"]: chosen = int(t)-1
+    elif t in ["a","b","c","d"]: chosen = ord(t)-97
+    else:
+        for i, o in enumerate([str(x).lower() for x in q.get("options", [])]):
+            if t and (t in o or o in t): chosen = i; break
+    right = chosen == correct
+    if right: QUIZ_STATE["score"] += 1
+    QUIZ_STATE["index"] += 1
+    if QUIZ_STATE["index"] >= len(QUIZ_STATE["questions"]):
+        s = QUIZ_STATE["score"]; tot = len(QUIZ_STATE["questions"]); tp = QUIZ_STATE["topic"]
+        QUIZ_STATE = {"active": False, "questions": [], "index": 0, "score": 0, "topic": ""}
+        msg = f"🎉 **QUIZ COMPLETE!** Score: **{s}/{tot}** "
+        if s == tot: msg += "— FULL MARKS macha! 🏆 Genius!"
+        elif s >= tot-1: msg += "— Super macha! 🔥"
+        elif s >= tot//2: msg += "— Nalla iruku macha! 👍"
+        else: msg += "— Paravala, next time adichu dhu! 💪"
+        add_to_memory("user", f"[Quiz] {tp}"); add_to_memory("model", f"Quiz score {s}/{tot}")
+        track_event("quiz")
+        return msg
+    fb = "✅ Correct macha! 🎉" if right else f"❌ Thappu macha! Correct: **{q['options'][correct]}**"
+    return fb + "\n\n" + quiz_question_text()
+
+FOCUS_TIMER = {"active": False, "end_time": 0, "duration": 1500, "mode": "work"}
+
+def timer_thread():
+    global FOCUS_TIMER
+    while True:
+        time.sleep(1)
+        if FOCUS_TIMER.get("active") and time.time() >= FOCUS_TIMER["end_time"]:
+            mode = FOCUS_TIMER["mode"]
+            FOCUS_TIMER["active"] = False
+            if mode == "work":
+                proactive_speak("Macha! 25 minutes mudinjiduchu. Super work! Oru 5 minutes break eduthukko.")
+            else:
+                proactive_speak("Macha! Break over. Thirumba focus time! Velaiya paappoma?")
+
+@app.route("/api/timer", methods=["GET", "POST"])
+def api_timer():
+    global FOCUS_TIMER
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        act = data.get("action")
+        if act == "start_work":
+            FOCUS_TIMER = {"active": True, "end_time": time.time() + 1500, "duration": 1500, "mode": "work"}
+        elif act == "start_break":
+            FOCUS_TIMER = {"active": True, "end_time": time.time() + 300, "duration": 300, "mode": "break"}
+        elif act == "stop":
+            FOCUS_TIMER["active"] = False
+        return jsonify({"success": True})
+    
+    remaining = 0
+    if FOCUS_TIMER["active"]:
+        remaining = max(0, int(FOCUS_TIMER["end_time"] - time.time()))
+        if remaining == 0: FOCUS_TIMER["active"] = False
+    return jsonify({"active": FOCUS_TIMER["active"], "mode": FOCUS_TIMER["mode"], "duration": FOCUS_TIMER["duration"], "remaining": remaining})
+
+DAILY_LOG = os.path.join(DATA_DIR, "daily_log.json")
+
+def track_event(kind):
+    try:
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        log = {}
+        if os.path.exists(DAILY_LOG):
+            with open(DAILY_LOG, "r", encoding="utf-8") as f: log = json.load(f)
+        d = log.get(today, {"msgs":0,"quiz":0,"songs":0,"shots":0,"notes":0})
+        d[kind] = d.get(kind,0) + 1
+        log[today] = d
+        with open(DAILY_LOG, "w", encoding="utf-8") as f: json.dump(log, f)
+    except: pass
+
+def get_today_stats():
+    try:
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        if os.path.exists(DAILY_LOG):
+            with open(DAILY_LOG, "r", encoding="utf-8") as f: log = json.load(f)
+            return log.get(today, {"msgs":0,"quiz":0,"songs":0,"shots":0,"notes":0})
+    except: pass
+    return {"msgs":0,"quiz":0,"songs":0,"shots":0,"notes":0}
+
+def fmt_uptime(s):
+    h=s//3600; m=(s%3600)//60
+    return f"{h}h {m}m" if h else f"{m}m"
+
+def build_daily_report():
+    s = get_today_stats()
+    score = min(100, s.get("msgs",0)*4 + s.get("quiz",0)*10 + s.get("notes",0)*8 + s.get("songs",0)*2 + s.get("shots",0)*3)
+    grade = "S" if score>=80 else "A" if score>=60 else "B" if score>=40 else "C"
+    temp, rain = get_weather_now()
+    now = datetime.datetime.now()
+    lines = [
+        f"📊 **DAILY REPORT** — {now.strftime('%A, %d %B %Y')}",
+        f"💬 Messages: **{s.get('msgs',0)}** • 🧠 Quiz: **{s.get('quiz',0)}** • 📝 Notes: **{s.get('notes',0)}**",
+        f"🎵 Songs: **{s.get('songs',0)}** • 📸 Screenshots: **{s.get('shots',0)}**",
+        f"🏆 Productivity Score: **{score}% (Grade {grade})**",
+    ]
+    if temp is not None:
+        lines.append(f"🌦 Chennai: **{temp}°C**, rain chance **{rain}%**")
+    lines.append(f"🕐 Uptime: {fmt_uptime(int(time.time()-SYSTEM_START))}")
+    return "\n".join(lines)
+
+@app.route("/api/report")
+def api_report():
+    return jsonify({"report": build_daily_report(), "stats": get_today_stats()})
 
 SYSTEM_START = time.time()
 
@@ -2382,13 +2648,36 @@ def api_weather():
     except Exception:
         return jsonify({"temp": None, "hum": None, "wind": None, "rain": None})
 
+@app.route("/api/theme", methods=["POST"])
+def api_theme():
+    data = request.get_json(silent=True) or {}
+    desc = str(data.get("desc", "")).strip()
+    if not desc:
+        return jsonify({"success": False, "error": "no description"}), 400
+    prompt = f"""You are a UI theme designer. Given a mood/description, return ONLY valid JSON with these exact keys, each a hex color:
+{{"bg":"#...","card":"#...","line":"#...","pink":"#...","violet":"#...","pink2":"#...","blue":"#...","txt":"#...","mut":"#...","glass":"#..."}}
+Rules: bg=very dark bg, card=dark panel, line=subtle border, pink/violet/pink2=vibrant accents, blue=secondary accent, txt=light text, mut=muted text, glass=light translucent.
+Description: {desc}"""
+    messages = [{"role":"system","content":"Return ONLY valid JSON."},{"role":"user","content":prompt}]
+    reply = _groq_complete(messages)
+    if not reply:
+        return jsonify({"success": False, "error": "AI unavailable"}), 503
+    m = re.search(r'\{[^}]+\}', reply)
+    if not m:
+        return jsonify({"success": False, "error": "bad JSON"}), 500
+    try:
+        colors = json.loads(m.group(0))
+    except Exception:
+        return jsonify({"success": False, "error": "bad JSON"}), 500
+    return jsonify({"success": True, "colors": colors, "name": desc})
+
 JARVIS_HTML = r"""
 <!DOCTYPE html>
 <html lang="ta">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>VASANTH AI — QUANTUM</title>
+<title>VASANTH AI — QUANTUM 3D</title>
 <link rel="icon" href="/logo.png" type="image/png">
 <style>
 :root{--cy:#7dd3fc;--pu:#c084fc;--pu2:#a855f7;--bg:#03040c;--panel:rgba(10,12,30,.66);--line:rgba(125,211,252,.22);--txt:#e8f6ff;--mut:#8fa8c9;--grn:#4ade80;}
@@ -2407,7 +2696,6 @@ body{background:radial-gradient(1000px 500px at 50% -10%,rgba(168,85,247,.12),tr
 .tchip{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:5px 12px;font-size:8px;color:var(--mut);letter-spacing:1px;text-align:center;}
 .tchip b{display:block;font-size:11px;color:var(--grn);letter-spacing:1px;}
 .icobtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--cy);font-size:14px;cursor:pointer;flex:0 0 auto;}
-.icobtn:hover{box-shadow:0 0 14px rgba(125,211,252,.4);}
 .wrap{display:grid;grid-template-columns:260px 1fr 290px;gap:12px;padding:12px;max-width:1600px;margin:0 auto;align-items:start;}
 .col{display:flex;flex-direction:column;gap:12px;}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;backdrop-filter:blur(8px);}
@@ -2426,47 +2714,28 @@ body{background:radial-gradient(1000px 500px at 50% -10%,rgba(168,85,247,.12),tr
 .ctitle h2{font-size:22px;letter-spacing:6px;text-shadow:0 0 30px rgba(192,132,252,.7);}
 .ctitle small{font-size:8px;letter-spacing:3px;color:var(--mut);}
 .ctitle .on{display:inline-block;margin-top:4px;font-size:9px;color:var(--grn);letter-spacing:2px;}
-.stage{position:relative;width:100%;max-width:560px;height:380px;display:grid;place-items:center;overflow:hidden;border-radius:20px;}
-.stars{position:absolute;inset:0;pointer-events:none;}
+.stage{position:relative;width:100%;max-width:560px;height:400px;display:grid;place-items:center;overflow:hidden;border-radius:20px;}
+#holo3d{position:absolute;inset:0;width:100%;height:100%;z-index:1;}
+.stars{position:absolute;inset:0;pointer-events:none;z-index:0;}
 .stars i{position:absolute;background:#e0f2fe;border-radius:50%;opacity:.7;animation:tw 3s infinite;}
 @keyframes tw{50%{opacity:.1}}
-.rings{position:absolute;inset:0;pointer-events:none;}
-.rings i{position:absolute;left:50%;top:62%;border:1.5px solid rgba(192,132,252,.5);border-radius:50%;animation:ripple 3.2s ease-out infinite;}
-.rings i:nth-child(1){width:230px;height:58px;margin:-29px 0 0 -115px;}
-.rings i:nth-child(2){width:300px;height:76px;margin:-38px 0 0 -150px;animation-delay:.8s;border-color:rgba(125,211,252,.4);}
-.rings i:nth-child(3){width:380px;height:96px;margin:-48px 0 0 -190px;animation-delay:1.6s;border-color:rgba(192,132,252,.25);}
-@keyframes ripple{0%{opacity:.9;transform:scale(.85)}100%{opacity:0;transform:scale(1.15)}}
 .chiprow{position:absolute;top:10px;left:0;right:0;display:flex;justify-content:center;gap:8px;z-index:3;padding:0 8px;}
 .fchip{border:1px solid var(--line);background:rgba(10,12,30,.78);backdrop-filter:blur(8px);border-radius:12px;padding:7px 12px;font-size:10px;color:var(--txt);box-shadow:0 0 18px rgba(125,211,252,.12);animation:floaty 5s ease-in-out infinite;}
 .fchip small{display:block;color:var(--mut);font-size:8px;}
 .fchip.b{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;animation-delay:2s;white-space:nowrap;}
 @keyframes floaty{50%{margin-top:-6px}}
-.orb{position:relative;width:190px;height:190px;border-radius:50%;z-index:2;
-background:radial-gradient(circle at 50% 42%,rgba(240,249,255,.95),rgba(125,211,252,.55) 28%,rgba(168,85,247,.4) 58%,rgba(2,4,12,0) 78%),
-radial-gradient(circle at 32% 32%,rgba(56,189,248,.5),transparent 60%),
-radial-gradient(circle at 68% 62%,rgba(192,132,252,.55),transparent 60%);
-filter:drop-shadow(0 0 34px rgba(168,85,247,.65));animation:orbPulse 3s ease-in-out infinite;}
-.orb::before{content:"";position:absolute;inset:-10px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 40deg,rgba(125,211,252,.55) 70deg,transparent 100deg,transparent 180deg,rgba(192,132,252,.55) 230deg,transparent 270deg);filter:blur(7px);animation:swirl 6s linear infinite;}
-.orb::after{content:"";position:absolute;inset:20px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#f0f9ff 0%,#7dd3fc 32%,rgba(168,85,247,.65) 62%,transparent 78%);filter:blur(2px);animation:corePulse 2s ease-in-out infinite;}
-@keyframes swirl{to{transform:rotate(360deg)}}
-@keyframes orbPulse{50%{transform:scale(1.05)}}
-@keyframes corePulse{50%{transform:scale(1.12);filter:blur(3px)}}
-body.speaking .orb{animation-duration:.9s;filter:drop-shadow(0 0 60px rgba(192,132,252,.95));}
-body.speaking .orb::after{animation-duration:.5s;}
 .bub{position:absolute;max-width:160px;background:rgba(10,12,30,.8);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:10px;line-height:1.5;z-index:3;}
 .bub.l{left:3%;bottom:18%;}
 .bub.r{right:3%;bottom:24%;color:var(--cy);}
 .dock{display:grid;grid-template-columns:repeat(8,54px);gap:8px;justify-content:center;margin-top:12px;}
 .dbtn{width:54px;height:54px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:17px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;}
 .dbtn small{font-size:7px;color:var(--mut);}
-.dbtn:hover{border-color:var(--pu);box-shadow:0 0 16px rgba(192,132,252,.4);}
 .cores{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px;}
 .core{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:8px 12px;display:flex;align-items:center;gap:8px;font-size:8px;color:var(--mut);letter-spacing:1px;}
 .core i{width:22px;height:22px;border-radius:50%;border:1px solid var(--pu);display:grid;place-items:center;font-size:10px;color:var(--pu);font-style:normal;}
 .core b{display:block;color:var(--grn);font-size:7px;}
 .cmdbar{display:flex;gap:8px;margin-top:14px;width:100%;max-width:620px;padding:0 10px;}
 .cmdbar input{flex:1;min-width:0;background:rgba(3,4,12,.85);border:1px solid var(--line);border-radius:999px;color:var(--txt);padding:12px 16px;font-size:12px;outline:none;}
-.cmdbar input:focus{border-color:var(--pu);box-shadow:0 0 20px rgba(192,132,252,.3);}
 .cmdbar button{width:44px;height:44px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--cy),var(--pu2));color:#012;font-size:15px;cursor:pointer;flex:0 0 auto;}
 .act{display:flex;gap:8px;align-items:center;font-size:10px;color:var(--mut);padding:6px 0;border-bottom:1px dashed rgba(125,211,252,.12);}
 .act i{font-style:normal;}
@@ -2474,7 +2743,6 @@ body.speaking .orb::after{animation-duration:.5s;}
 .tgl b{color:var(--txt);font-size:9px;cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:2px 8px;}
 .qact{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
 .qa{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px;font-size:9px;color:var(--mut);cursor:pointer;display:flex;gap:6px;align-items:center;}
-.qa:hover{border-color:var(--pu);color:var(--txt);}
 .foot{display:flex;justify-content:space-between;gap:10px;padding:8px 16px;border-top:1px solid var(--line);font-size:8px;letter-spacing:2px;color:var(--mut);background:rgba(3,4,12,.9);flex-wrap:wrap;}
 .foot b{color:var(--pu);}
 .wave{display:flex;gap:2px;height:20px;align-items:center;}
@@ -2490,12 +2758,7 @@ body.speaking .wave i{animation:wv .8s infinite;}
 .tlogo img{width:34px;height:34px;}
 .tlogo h1{font-size:13px;letter-spacing:2px;}
 .ctitle h2{font-size:16px;letter-spacing:4px;}
-.ctitle small{font-size:7px;}
-.stage{height:330px;}
-.orb{width:150px;height:150px;}
-.rings i:nth-child(3){display:none;}
-.rings i:nth-child(1){width:180px;height:46px;margin:-23px 0 0 -90px;}
-.rings i:nth-child(2){width:240px;height:60px;margin:-30px 0 0 -120px;}
+.stage{height:340px;}
 .bub{display:none;}
 .fchip{padding:6px 10px;font-size:9px;}
 .dock{grid-template-columns:repeat(4,1fr);width:100%;padding:0 10px;}
@@ -2509,7 +2772,7 @@ body.speaking .wave i{animation:wv .8s infinite;}
 </head>
 <body>
 <div class="top">
-<div class="tlogo"><img src="/logo.png"><div><h1>VASANTH AI</h1><small>QUANTUM CORE • v3.0</small></div></div>
+<div class="tlogo"><img src="/logo.png"><div><h1>VASANTH AI</h1><small>QUANTUM CORE • 3D HOLOGRAM</small></div></div>
 <div class="tclock"><b id="clock">--:--:--</b><small id="datestr">--</small></div>
 <div class="tright">
 <div class="tchips">
@@ -2564,23 +2827,16 @@ body.speaking .wave i{animation:wv .8s infinite;}
 <div class="row"><span>Wind</span><b id="wWind">--</b></div>
 <div class="row"><span>Rain</span><b id="wRain">--</b></div>
 </div>
-<div class="panel">
-<h3>AI INSIGHTS</h3>
-<div class="row"><span>Productivity</span><b style="color:var(--grn)">85%</b></div>
-<div class="row"><span>Efficiency</span><b style="color:var(--cy)">92%</b></div>
-<div class="row"><span>Active Time</span><b id="uptime2">--</b></div>
-</div>
 </div>
 <div class="center">
 <div class="ctitle"><h2>VASANTH AI</h2><small>YOUR PERSONAL AI ASSISTANT</small><br><span class="on">● ONLINE & ACTIVE</span></div>
-<div class="stage">
+<div class="stage" id="stage3d">
 <div class="stars" id="stars"></div>
-<div class="rings"><i></i><i></i><i></i></div>
+<canvas id="holo3d"></canvas>
 <div class="chiprow">
 <div class="fchip" id="fWeather">☀ --°C<small>Humidity --%</small></div>
 <div class="fchip" id="fStats">CPU --%<small>RAM --%</small></div>
 </div>
-<div class="orb"></div>
 <div class="fchip b" id="fNet">⚡ Network: -- MB</div>
 <div class="bub l">Hello Vasanth 👋<br>How can I help you?</div>
 <div class="bub r">என்ன உதவி<br>செய்யலாம்?</div>
@@ -2599,7 +2855,7 @@ body.speaking .wave i{animation:wv .8s infinite;}
 <div class="core"><i>🎤</i><div>SPEECH RECOGNITION<b>● Active</b></div></div>
 <div class="core"><i>🧠</i><div>NLP ENGINE<b>● Active</b></div></div>
 <div class="core"><i>🤖</i><div>AUTOMATION<b>● Active</b></div></div>
-<div class="core"><i>🔮</i><div>QUANTUM CORE<b id="memCore">--</b></div></div>
+<div class="core"><i>🔮</i><div>QUANTUM 3D<b id="memCore">--</b></div></div>
 </div>
 <div class="cmdbar">
 <input id="cin" placeholder="Type your command or ask anything..." onkeydown="if(event.key==='Enter')cmd()">
@@ -2648,171 +2904,105 @@ body.speaking .wave i{animation:wv .8s infinite;}
 <div style="text-align:center;font-size:9px;color:var(--pu);margin-top:6px" id="micState">Listening...</div>
 </div>
 <div class="panel">
-<h3>SYSTEM CONTROL</h3>
-<div style="display:flex;justify-content:center;margin-bottom:8px"><div class="ring" style="--p:50%"><span>50%</span></div></div>
-<div class="tgl"><span>📶 Wi-Fi</span><b>Connected</b></div>
-<div class="tgl"><span>🔵 Bluetooth</span><b>On</b></div>
-<div class="tgl"><span>🌙 Night Mode</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
-<div class="tgl"><span>🔕 Do Not Disturb</span><b onclick="this.textContent=this.textContent==='On'?'Off':'On'">Off</b></div>
-<div class="tgl"><span>⚡ Performance</span><b>Balanced</b></div>
-</div>
-<div class="panel">
 <h3>QUICK ACTIONS</h3>
 <div class="qact">
-<div class="qa" onclick="cmd('lock')">🔒 Lock System</div>
+<div class="qa" onclick="cmd('lock')">🔒 Lock</div>
 <div class="qa" onclick="cmd('take screenshot')">📸 Screenshot</div>
-<div class="qa" onclick="cmd('open camera')">📷 Open Camera</div>
-<div class="qa" onclick="cmd('open calculator')">🧮 Calculator</div>
-<div class="qa" onclick="cmd('play music')">🎵 Play Music</div>
-<div class="qa" onclick="cmd('battery')">🔋 System Info</div>
-</div>
-</div>
-<div class="panel">
-<h3>COMMAND SHORTCUTS</h3>
-<div class="qact">
-<div class="qa" onclick="cmd('open chrome')">🌐 Open Chrome</div>
-<div class="qa" onclick="window.open('https://web.whatsapp.com')">🟢 WhatsApp</div>
-<div class="qa" onclick="cmd('shutdown')">⏻ Shutdown PC</div>
-<div class="qa" onclick="cmd('weather')">🌦 Weather</div>
+<div class="qa" onclick="cmd('open camera')">📷 Camera</div>
+<div class="qa" onclick="cmd('open calculator')">🧮 Calc</div>
+<div class="qa" onclick="cmd('play music')">🎵 Music</div>
+<div class="qa" onclick="cmd('battery')">🔋 System</div>
 </div>
 </div>
 </div>
 </div>
-<div class="foot"><span><b>VASANTH AI</b> — 100% TAMIL • தமிழ்</span><span><b>VOICE</b> | <b>AI</b> | <b>AUTOMATION</b> | <b>QUANTUM CORE</b></span></div>
+<div class="foot"><span><b>VASANTH AI</b> — 100% TAMIL • தமிழ்</span><span><b>VOICE</b> | <b>AI</b> | <b>AUTOMATION</b> | <b>QUANTUM 3D</b></span></div>
 <script>
 function $(id){return document.getElementById(id);}
 let voiceEnabled = localStorage.getItem("jarvisVoice") !== "off";
 const cpuHist=[],ramHist=[];
 function drawGraph(){const c=document.getElementById("graph");if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);x.strokeStyle="rgba(125,211,252,.15)";x.lineWidth=1;for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,c.height*i/4);x.lineTo(c.width,c.height*i/4);x.stroke();}function ln(h,col){if(h.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();h.forEach((v,i)=>{const px=(i/59)*c.width;const py=c.height-(v/100)*c.height;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}ln(cpuHist,"#7dd3fc");ln(ramHist,"#c084fc");}
 (function(){const s=$("stars");if(!s)return;for(let i=0;i<70;i++){const d=document.createElement("i");d.style.left=Math.random()*100+"%";d.style.top=Math.random()*100+"%";const sz=(Math.random()*2+1).toFixed(1);d.style.width=sz+"px";d.style.height=sz+"px";d.style.animationDelay=(Math.random()*4).toFixed(1)+"s";s.appendChild(d);}})();
-function toggleVoice(){
-voiceEnabled=!voiceEnabled;
-localStorage.setItem("jarvisVoice",voiceEnabled?"on":"off");
-setVoiceState();
+// ===== 3D HOLOGRAM ENGINE (wireframe sphere + gyro rings + beam + mouse tilt + voice reactive) =====
+(function(){
+const cv=document.getElementById("holo3d");if(!cv)return;
+const ctx=cv.getContext("2d");
+let W=0,H=0;const DPR=Math.min(2,window.devicePixelRatio||1);
+function rs(){W=cv.width=cv.offsetWidth*DPR;H=cv.height=cv.offsetHeight*DPR;}
+rs();addEventListener("resize",rs);
+const N=220,pts=[];
+for(let i=0;i<N;i++){const phi=Math.acos(1-2*(i+0.5)/N);const th=Math.PI*(1+Math.sqrt(5))*i;pts.push([Math.sin(phi)*Math.cos(th),Math.cos(phi),Math.sin(phi)*Math.sin(th)]);}
+const edges=[];
+for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const dx=pts[i][0]-pts[j][0],dy=pts[i][1]-pts[j][1],dz=pts[i][2]-pts[j][2];if(dx*dx+dy*dy+dz*dz<0.12)edges.push([i,j]);}
+const rings=[{r:1.5,tilt:0.5,sp:0.012,col:"56,189,248"},{r:1.8,tilt:-0.4,sp:-0.009,col:"192,132,252"},{r:2.1,tilt:0.2,sp:0.006,col:"125,211,252"}];
+const beam=[];for(let i=0;i<60;i++)beam.push({a:Math.random()*Math.PI*2,r:Math.random()*0.5,y:Math.random(),s:0.004+Math.random()*0.008});
+let ry=0,mx=0,my=0,tmx=0,tmy=0,boost=0,t=0;
+const stage=document.getElementById("stage3d")||cv.parentElement;
+if(stage){stage.addEventListener("mousemove",e=>{const r=stage.getBoundingClientRect();tmx=((e.clientX-r.left)/r.width*2-1)*0.6;tmy=((e.clientY-r.top)/r.height*2-1)*0.4;});stage.addEventListener("mouseleave",()=>{tmx=0;tmy=0;});}
+function proj(x,y,z,cx,cy,s,RY,RX){
+const cyr=Math.cos(RY),syr=Math.sin(RY);
+const x1=x*cyr+z*syr,z1=-x*syr+z*cyr;
+const cxr=Math.cos(RX),sxr=Math.sin(RX);
+const y1=y*cxr-z1*sxr,z2=y*sxr+z1*cxr;
+const p=2.6/(2.6+z2);
+return[cx+x1*s*p,cy+y1*s*p,p,z2];
 }
-function setVoiceState(){
-document.title = voiceEnabled ? "VASANTH AI — QUANTUM 🔊" : "VASANTH AI — QUANTUM 🔇";
+function frame(){
+t++;
+const speaking=document.body.classList.contains("speaking");
+if(speaking)boost=Math.min(1,boost+0.08);else boost=Math.max(0,boost-0.03);
+ry+=(speaking?0.02:0.006)+boost*0.02;
+mx+=(tmx-mx)*0.06;my+=(tmy-my)*0.06;
+const RY=ry+mx,RX=0.35+my;
+const cx=W/2,cy=H*0.44,s=Math.min(W,H)*0.30;
+ctx.clearRect(0,0,W,H);
+ctx.save();ctx.globalCompositeOperation="lighter";
+for(const b of beam){b.y-=b.s*(1+boost*2);if(b.y<0)b.y=1;
+const rr=b.r*(0.3+b.y*0.7);
+const px=cx+Math.cos(b.a+t*0.01)*rr*s,py=cy+(b.y-0.5)*s*2.2;
+ctx.fillStyle="rgba(125,211,252,"+(((1-b.y)*0.5)+boost*0.3).toFixed(2)+")";
+ctx.fillRect(px,py,1.5*DPR,1.5*DPR);}
+ctx.restore();
+for(const R of rings){ctx.beginPath();
+for(let i=0;i<=72;i++){const a=i/72*Math.PI*2+t*R.sp;
+const x=Math.cos(a)*R.r,z=Math.sin(a)*R.r,y=Math.sin(a+t*R.sp)*R.tilt*0.3;
+const p=proj(x,y,z,cx,cy,s,RY,RX);
+if(i===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);}
+ctx.strokeStyle="rgba("+R.col+","+(0.35+boost*0.3)+")";ctx.lineWidth=1.2*DPR;ctx.stroke();}
+ctx.lineWidth=0.5*DPR;
+for(const e of edges){const a=proj(pts[e[0]][0],pts[e[0]][1],pts[e[0]][2],cx,cy,s,RY,RX);const b=proj(pts[e[1]][0],pts[e[1]][1],pts[e[1]][2],cx,cy,s,RY,RX);
+const al=Math.max(0,Math.min(1,(2-(a[3]+b[3])/2)/2))*(0.25+boost*0.3);
+ctx.strokeStyle="rgba(125,211,252,"+al.toFixed(2)+")";
+ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}
+for(const p of pts){const q=proj(p[0],p[1],p[2],cx,cy,s,RY,RX);
+const d=Math.max(0.05,Math.min(1,(1-q[3])/2));
+ctx.fillStyle="rgba(190,242,255,"+(d*(0.7+boost*0.3)).toFixed(2)+")";
+ctx.beginPath();ctx.arc(q[0],q[1],(0.9+q[2]*0.8+boost*0.6)*DPR,0,7);ctx.fill();}
+const g=ctx.createRadialGradient(cx,cy,0,cx,cy,s*0.5);
+g.addColorStop(0,"rgba(240,249,255,"+(0.5+boost*0.4)+")");
+g.addColorStop(0.4,"rgba(125,211,252,0.25)");
+g.addColorStop(1,"rgba(0,0,0,0)");
+ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,s*0.5,0,7);ctx.fill();
+requestAnimationFrame(frame);
 }
-function playTTS(text){
-if(!voiceEnabled||!text)return;
-fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text})})
-.then(r=>r.blob()).then(b=>{
-if(!b.size)return;
-const u=URL.createObjectURL(b),a=new Audio(u);
-document.body.classList.add("speaking");
-const off=()=>{document.body.classList.remove("speaking");URL.revokeObjectURL(u);};
-a.onended=off;a.onerror=off;
-a.play().catch(off);
-}).catch(()=>{});
-}
+frame();
+})();
+function toggleVoice(){voiceEnabled=!voiceEnabled;localStorage.setItem("jarvisVoice",voiceEnabled?"on":"off");document.title=voiceEnabled?"VASANTH AI — QUANTUM 🔊":"VASANTH AI — QUANTUM 🔇";}
+function playTTS(text){if(!voiceEnabled||!text)return;fetch("/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text})}).then(r=>r.blob()).then(b=>{if(!b.size)return;const u=URL.createObjectURL(b),a=new Audio(u);document.body.classList.add("speaking");const off=()=>{document.body.classList.remove("speaking");URL.revokeObjectURL(u);};a.onended=off;a.onerror=off;a.play().catch(off);}).catch(()=>{});}
 setInterval(()=>{const d=new Date();const c=$("clock");if(c)c.textContent=d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});const ds=$("datestr");if(ds)ds.textContent=d.toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"});},1000);
 function fmtUp(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h>0?h+"h "+m+"m":m+"m "+(s%60)+"s";}
-setInterval(async()=>{
-try{
-const r=await fetch("/api/stats");const d=await r.json();
-$("cpuRing").style.setProperty("--p",d.cpu+"%");$("cpuTxt").textContent=Math.round(d.cpu)+"%";
-$("ramPct").textContent=Math.round(d.ram_pct)+"%";$("ramBar").style.width=d.ram_pct+"%";
-$("diskPct").textContent=d.disk_pct+"%";$("diskBar").style.width=d.disk_pct+"%";
-$("netSp").textContent=d.net_down+" MB";
-$("ndown").textContent=d.net_down+" MB";$("nup").textContent=d.net_up+" MB";
-$("uptime").textContent=fmtUp(d.uptime);$("uptime2").textContent=fmtUp(d.uptime);
-$("memCore").textContent="● "+d.messages+" Stored";
-$("fStats").innerHTML="CPU "+Math.round(d.cpu)+"%<small>RAM "+Math.round(d.ram_pct)+"%</small>";
-$("fNet").textContent="⚡ Network: "+d.net_down+" MB";
-cpuHist.push(d.cpu);ramHist.push(d.ram_pct);
-if(cpuHist.length>60)cpuHist.shift();if(ramHist.length>60)ramHist.shift();
-drawGraph();
-}catch(e){}
-},2000);
-fetch("/api/weather").then(r=>r.json()).then(d=>{
-if(d.temp==null){$("wCond").textContent="No internet";return;}
-$("wTemp").textContent=d.temp+"°";$("wRing").style.setProperty("--p",Math.min(d.temp*2,100)+"%");
-$("wCond").textContent=d.temp>=30?"Hot & Humid":"Pleasant";
-$("wHum").textContent=d.hum+"%";$("wWind").textContent=d.wind+" km/h";$("wRain").textContent=d.rain+"%";
-$("fWeather").innerHTML="☀ "+d.temp+"°C<small>Humidity "+d.hum+"%</small>";
-$("smartW").innerHTML="🌤 <b>"+d.temp+"°C</b> | "+(d.temp>=30?"Partly Cloudy":"Pleasant")+"<br>Humidity: "+d.hum+"% • Wind: "+d.wind+" km/h<br>Rain chance: "+d.rain+"% — "+(d.rain>=50?"குடை எடுத்து வா! ☂":"பரவாயில்லை! ☀");
-}).catch(()=>{$("wCond").textContent="Offline";});
-fetch("/history").then(r=>r.json()).then(d=>{
-const box=$("acts");box.innerHTML="";
-(d.history||[]).slice(-5).reverse().forEach(h=>{
-const t=String(h.text||"");
-const ic=t.toLowerCase().includes("youtube")?"▶":t.toLowerCase().includes("screenshot")?"📸":h.role==="user"?"👤":"";
-const div=document.createElement("div");div.className="act";
-div.innerHTML="<i>"+ic+"</i>"+t.replace(/[<>&]/g,"").slice(0,32);
-box.appendChild(div);
-});
-}).catch(()=>{});
-function updMusic(m){ if(m){const t=$("npTitle"); if(t)t.innerHTML=(m.playing?"🎵 ":"⏸ ")+(m.title||"Nothing playing");} }
+setInterval(async()=>{try{const r=await fetch("/api/stats");const d=await r.json();$("cpuRing").style.setProperty("--p",d.cpu+"%");$("cpuTxt").textContent=Math.round(d.cpu)+"%";$("ramPct").textContent=Math.round(d.ram_pct)+"%";$("ramBar").style.width=d.ram_pct+"%";$("diskPct").textContent=d.disk_pct+"%";$("diskBar").style.width=d.disk_pct+"%";$("netSp").textContent=d.net_down+" MB";$("ndown").textContent=d.net_down+" MB";$("nup").textContent=d.net_up+" MB";$("uptime").textContent=fmtUp(d.uptime);$("memCore").textContent="● "+d.messages+" Stored";$("fStats").innerHTML="CPU "+Math.round(d.cpu)+"%<small>RAM "+Math.round(d.ram_pct)+"%</small>";$("fNet").textContent="⚡ Network: "+d.net_down+" MB";cpuHist.push(d.cpu);ramHist.push(d.ram_pct);if(cpuHist.length>60)cpuHist.shift();if(ramHist.length>60)ramHist.shift();drawGraph();}catch(e){}},2000);
+fetch("/api/weather").then(r=>r.json()).then(d=>{if(d.temp==null){$("wCond").textContent="No internet";return;}$("wTemp").textContent=d.temp+"°";$("wRing").style.setProperty("--p",Math.min(d.temp*2,100)+"%");$("wCond").textContent=d.temp>=30?"Hot & Humid":"Pleasant";$("wHum").textContent=d.hum+"%";$("wWind").textContent=d.wind+" km/h";$("wRain").textContent=d.rain+"%";$("fWeather").innerHTML="☀ "+d.temp+"°C<small>Humidity "+d.hum+"%</small>";$("smartW").innerHTML="🌤 <b>"+d.temp+"°C</b> | "+(d.temp>=30?"Partly Cloudy":"Pleasant")+"<br>Humidity: "+d.hum+"% • Wind: "+d.wind+" km/h<br>Rain: "+d.rain+"%";}).catch(()=>{$("wCond").textContent="Offline";});
+fetch("/history").then(r=>r.json()).then(d=>{const box=$("acts");box.innerHTML="";(d.history||[]).slice(-5).reverse().forEach(h=>{const t=String(h.text||"");const ic=t.toLowerCase().includes("youtube")?"▶":t.toLowerCase().includes("screenshot")?"📸":h.role==="user"?"👤":"🤖";const div=document.createElement("div");div.className="act";div.innerHTML="<i>"+ic+"</i>"+t.replace(/[<>&]/g,"").slice(0,32);box.appendChild(div);});}).catch(()=>{});
+function updMusic(m){const t=$("npTitle");if(t)t.innerHTML=(m.playing?"🎵 ":" ")+(m.title||"Nothing playing");}
 setInterval(()=>{fetch("/api/music").then(r=>r.json()).then(updMusic).catch(()=>{});},3000);
-function music(act){
-const q=(document.getElementById("musIn")||{}).value||"";
-fetch("/api/music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:act,query:q})}).then(r=>r.json()).then(d=>{updMusic(d.music);});
-}
-function startMic(cont){
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(!SR){const ms=$("micState");if(ms)ms.textContent="Chrome மட்டும் தான்";return;}
-if(!window.isSecureContext){const ms=$("micState");if(ms)ms.textContent="localhost-ல மட்டும்";return;}
-const r=new SR();r.lang="ta-IN";r.continuous=cont;r.interimResults=false;
-const ms=$("micState");if(ms)ms.textContent="🎧 Listening...";
-r.onresult=(e)=>{const t=e.results[e.results.length-1][0].transcript;cmd(t);};
-r.onerror=(e)=>{const ms=$("micState");if(ms)ms.textContent="⚠️ "+e.error;};
-r.onend=()=>{if(cont)startMic(true);else{const ms=$("micState");if(ms)ms.textContent="Listening...";}};
-try{r.start();}catch(e){}
-}
-const cpuHist=[],ramHist=[];
-function drawGraph(){const c=document.getElementById("graph");if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);x.strokeStyle="rgba(125,211,252,.15)";x.lineWidth=1;for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,c.height*i/4);x.lineTo(c.width,c.height*i/4);x.stroke();}function ln(h,col){if(h.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();h.forEach((v,i)=>{const px=(i/59)*c.width;const py=c.height-(v/100)*c.height;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}ln(cpuHist,"#7dd3fc");ln(ramHist,"#c084fc");}
-</script>
-fetch("/api/notes").then(r=>r.json()).then(d=>{
-const box=$("notesBox");if(!box)return;
-box.innerHTML="";
-(d.notes||[]).slice(-3).reverse().forEach(function(n,i){
-const div=document.createElement("div");div.className="act";
-div.innerHTML="<i>📝</i>"+String(n.text).replace(/[<>&]/g,"").slice(0,26);
-box.appendChild(div);
-});
-(d.todos||[]).map(function(t,idx){return {t:t,idx:idx};}).slice(-4).forEach(function(o){
-const div=document.createElement("div");div.className="act";div.style.cursor="pointer";
-div.innerHTML="<i>"+(o.t.done?"✅":"☐")+"</i>"+String(o.t.text).replace(/[<>&]/g,"").slice(0,24);
-div.onclick=function(){fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"toggle_todo",index:o.idx})}).then(loadNotes);};
-box.appendChild(div);
-});
-if(!(d.notes||[]).length && !(d.todos||[]).length) box.innerHTML="<div class='act'><i>📝</i>No notes yet</div>";
-}).catch(()=>{});
-}
-setInterval(loadNotes,5000);
-function addQuickNote(){
-const v=$("noteIn")?$("noteIn").value.trim():"";if(!v)return;$("noteIn").value="";
-const act=v.toLowerCase().startsWith("todo")?"add_todo":"add_note";
-const txt=act==="add_todo"?v.replace(/^todo[: ]*/i,""):v;
-fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:act,text:txt})}).then(loadNotes);
-}
-function toggleAuto(el){
-const k=el.getAttribute("data-key");
-const b=el.querySelector("b");
-const on=b.textContent==="ON";
-b.textContent=!on?"ON":"OFF";
-b.style.color=!on?"var(--grn)":"var(--mut)";
-fetch("/api/automation",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:k,value:!on})});
-}
-fetch("/api/automation").then(r=>r.json()).then(d=>{
-document.querySelectorAll(".auto-tgl").forEach(el=>{
-const k=el.getAttribute("data-key");
-const b=el.querySelector("b");
-b.textContent=d[k]?"ON":"OFF";
-b.style.color=d[k]?"var(--grn)":"var(--mut)";
-});
-}).catch(()=>{});
-async function cmd(t){
-const q=t||$("cin").value.trim();if(!q)return;$("cin").value="";
-try{
-const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:q})});
-const d=await r.json();
-const txt=String(d.reply||"Done");
-playTTS(txt);
-}catch(e){}
-}
-const cpuHist=[],ramHist=[];
-function drawGraph(){const c=document.getElementById("graph");if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);x.strokeStyle="rgba(125,211,252,.15)";x.lineWidth=1;for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,c.height*i/4);x.lineTo(c.width,c.height*i/4);x.stroke();}function ln(h,col){if(h.length<2)return;x.strokeStyle=col;x.lineWidth=2;x.beginPath();h.forEach((v,i)=>{const px=(i/59)*c.width;const py=c.height-(v/100)*c.height;i?x.lineTo(px,py):x.moveTo(px,py);});x.stroke();}ln(cpuHist,"#7dd3fc");ln(ramHist,"#c084fc");}
+function music(act){const q=($("musIn")||{}).value||"";fetch("/api/music",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:act,query:q})}).then(r=>r.json()).then(d=>{updMusic(d.music);}).catch(()=>{});}
+function loadNotes(){fetch("/api/notes").then(r=>r.json()).then(d=>{const box=$("notesBox");if(!box)return;box.innerHTML="";(d.notes||[]).slice(-3).reverse().forEach(n=>{const div=document.createElement("div");div.className="act";div.innerHTML="<i>📝</i>"+String(n.text).replace(/[<>&]/g,"").slice(0,24);box.appendChild(div);});(d.todos||[]).map((t,idx)=>({t:t,idx:idx})).slice(-4).forEach(o=>{const div=document.createElement("div");div.className="act";div.style.cursor="pointer";div.innerHTML="<i>"+(o.t.done?"✅":"☐")+"</i>"+String(o.t.text).replace(/[<>&]/g,"").slice(0,22);div.onclick=function(){fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"toggle_todo",index:o.idx})}).then(loadNotes);};box.appendChild(div);});if(!(d.notes||[]).length&&!(d.todos||[]).length)box.innerHTML="<div class='act'><i>📝</i>No notes yet</div>";}).catch(()=>{});}
+setInterval(loadNotes,5000);loadNotes();
+function addQuickNote(){const v=($("noteIn")||{}).value.trim();if(!v)return;$("noteIn").value="";const act=v.toLowerCase().startsWith("todo")?"add_todo":"add_note";const txt=act==="add_todo"?v.replace(/^todo[: ]*/i,""):v;fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:act,text:txt})}).then(loadNotes);}
+function toggleAuto(el){const k=el.getAttribute("data-key");const b=el.querySelector("b");const on=b.textContent==="ON";b.textContent=!on?"ON":"OFF";b.style.color=!on?"var(--grn)":"var(--mut)";fetch("/api/automation",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key:k,value:!on})});}
+fetch("/api/automation").then(r=>r.json()).then(d=>{document.querySelectorAll(".auto-tgl").forEach(el=>{const k=el.getAttribute("data-key");const b=el.querySelector("b");b.textContent=d[k]?"ON":"OFF";b.style.color=d[k]?"var(--grn)":"var(--mut)";});}).catch(()=>{});
+async function cmd(t){const q=t||$("cin").value.trim();if(!q)return;$("cin").value="";try{const r=await fetch("/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({command:q})});const d=await r.json();playTTS(String(d.reply||""));}catch(e){}}
 function startMic(cont){
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(!SR){const ms=$("micState");if(ms)ms.textContent="Chrome மட்டும் தான்";return;}
@@ -2884,12 +3074,7 @@ if __name__ == "__main__":
     print(f"Ollama:   {'READY ✅ (OFFLINE!)' if OLLAMA_READY else 'Not running'}")
     print(f"Telegram: {'READY ✅' if (TELEGRAM_AVAILABLE and TELEGRAM_BOT_TOKEN) else 'Not configured'}")
     print(f"Gemini:   {'🥇 NATURAL VOICE READY' if GEMINI_API_KEY else 'NOT SET (fallback)'}")
-    print(f"HF Token: {'🎨 Image Backup READY' if HF_TOKEN.startswith('hf_') else 'NOT SET'}")
-    print(f"Lameenc:  {'✅ MP3 encoder' if LAMEENC_READY else '❌ pip install lameenc'}")
-    print(f"Themes:   🎨 6 themes | 🎭 4 personalities | 🗣️ custom wake")
     print(f"JARVIS:   🤖 /jarvis + AUTOMATION + MUSIC + LIVE GRAPHS")
-    print(f"Brain:    🧠 Genius Mode + Screen Vision")
-    print(f"Voice:    🔊 Gemini + Google + Edge (multi-provider)")
     print("=" * 60 + "\n")
     threading.Thread(target=open_browser, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False, use_reloader=False)
